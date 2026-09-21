@@ -48,7 +48,8 @@ async function discoverFromChallenge (actor, { fetch }) {
   if (res.status !== 401) return null
   const url = parseResourceMetadataUrl(res.headers.get('www-authenticate'))
   if (!url) return null
-  try { return await discoverFromResourceMetadata(url, { fetch }) } catch { return null }
+  // The server advertised RFC 9728; a broken document is a diagnosable error, not a fall-through.
+  return discoverFromResourceMetadata(url, { fetch })
 }
 
 export function parseResourceMetadataUrl (wwwAuthenticate) {

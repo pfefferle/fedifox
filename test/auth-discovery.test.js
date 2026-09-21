@@ -46,6 +46,15 @@ test('throws a FedifoxError naming the host when nothing is advertised', async (
   await assert.rejects(discoverEndpoints({ id: 'https://x.test/a', outbox: 'https://x.test/a/outbox' }, { fetch }), (e) => e.step === 'discover-endpoints' && /x\.test does not advertise/.test(e.message))
 })
 
+test('a broken RFC 9728 document surfaces its own error, not the generic one', async () => {
+  const { fetch } = createFetchStub({
+    'GET https://x.test/.well-known/oauth-authorization-server': { status: 404, body: '' },
+    'GET https://x.test/a/outbox': { status: 401, body: '', headers: { 'www-authenticate': 'Bearer resource_metadata="https://x.test/.well-known/oauth-protected-resource"' } },
+    'GET https://x.test/.well-known/oauth-protected-resource': json({ resource: 'https://x.test', authorization_servers: [] })
+  })
+  await assert.rejects(discoverEndpoints({ id: 'https://x.test/a', outbox: 'https://x.test/a/outbox' }, { fetch }), (e) => e.step === 'discover-endpoints' && /lists no authorization server/.test(e.message))
+})
+
 test('fetchServerMetadata returns null for non-JSON', async () => {
   const { fetch } = createFetchStub({ 'GET https://x.test/.well-known/oauth-authorization-server': { status: 200, body: '<html>', headers: { 'content-type': 'text/html' } } })
   assert.equal(await fetchServerMetadata('https://x.test', { fetch }), null)
