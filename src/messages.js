@@ -1,9 +1,13 @@
 import { describeError, FedifoxError } from './errors.js'
 import { headerCandidates } from './discovery/resolver.js'
 
-export function createRouter ({ store, session, resolver, actions, browser, now = () => Date.now() }) {
+export function createRouter ({ store, session, resolver, actions, browser }) {
   const tabResources = new Map()
   const tabHeaderLinks = new Map()
+  const tabGeneration = new Map()
+
+  const generation = (tabId) => tabGeneration.get(tabId) || 0
+  const bumpGeneration = (tabId) => tabGeneration.set(tabId, generation(tabId) + 1)
 
   async function setBadge (tabId, resource) {
     try {
@@ -41,13 +45,14 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
     followAuthor: (a, r) => actions.follow(a, requireAuthor(r).id),
     undoFollowAuthor: (a, r) => actions.undoFollow(a, requireAuthor(r).id),
     reply: (a, r, text) => actions.reply(a, r, text),
-    mention: (a, r, text) => actions.mention(a, r.kind === 'actor' ? { id: r.id, handle: r.handle || new URL(r.id).host } : requireAuthor(r), text)
+    mention: (a, r, text) => actions.mention(a, r.kind === 'actor' ? { id: r.id, handle: r.handle } : requireAuthor(r), text)
   }
 
   const handlers = {
     async 'page:discovered' (msg, sender) {
       const tabId = sender?.tab?.id
       const account = (await store.getSelectedAccount()) || undefined
+      const gen = generation(tabId)
       const resource = await resolver.resolve({
         pageUrl: msg.url,
         objectCandidates: msg.objectCandidates || [],
@@ -55,7 +60,7 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
         headerLinks: tabHeaderLinks.get(tabId) || [],
         account
       })
-      if (tabId != null) {
+      if (tabId != null && generation(tabId) === gen) {
         tabResources.set(tabId, resource)
         await setBadge(tabId, resource)
       }
@@ -94,11 +99,15 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
     recordHeaderLinks (tabId, linkHeaderValue, baseUrl) {
       tabHeaderLinks.set(tabId, headerCandidates(linkHeaderValue, baseUrl))
     },
+    clearResource (tabId) {
+      tabResources.delete(tabId)
+      bumpGeneration(tabId)
+    },
     forgetTab (tabId) {
       tabResources.delete(tabId)
       tabHeaderLinks.delete(tabId)
+      bumpGeneration(tabId)
     },
-    hasResource: (tabId) => Boolean(tabResources.get(tabId)),
-    now
+    hasResource: (tabId) => Boolean(tabResources.get(tabId))
   }
 }

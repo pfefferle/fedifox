@@ -96,8 +96,28 @@ test('ensureFreshToken refreshes near expiry and flags failure', async () => {
   assert.equal(await session.ensureFreshToken(fresh), 'at-2')
 
   stub.routes['POST https://x.test/oauth/token'] = { status: 400, body: { error: 'invalid_grant' }, headers: { 'content-type': 'application/json' } }
+  // ensureFreshToken now decides from the stored account, not the caller's
+  // copy — so forcing expiry means actually persisting it, not just
+  // overriding the local object passed in.
+  await store.saveAccount({ ...saved, expiresAt: 0 })
   await assert.rejects(session.ensureFreshToken({ ...saved, expiresAt: 0 }), (e) => e.step === 'refresh-token')
   assert.equal((await store.getAccount(actor.id)).needsReauth, true)
+})
+
+test('ensureFreshToken re-reads the stored account, so a second call with the same stale object does not refresh twice', async () => {
+  const { store, stub, client } = setup({ tokenBody: { access_token: 'at-2', token_type: 'bearer', expires_in: 3600, refresh_token: 'rt-2' } })
+  const session = createSession({ store, client, browser: makeBrowser(() => ''), fetch: stub.fetch, oauth, now: () => 10_000 })
+  const stale = accountFromActor(actor, { access_token: 'at-1', refresh_token: 'rt-1', expires_in: 30 }, { asOrigin: 'https://x.test', now: 0 })
+  await store.saveAccount(stale)
+  await store.saveClientCreds('https://x.test', { clientId: 'dcr-1', source: 'dcr' })
+
+  assert.equal(await session.ensureFreshToken(stale), 'at-2')
+  // Same in-memory (now stale) object passed again, as callers within one
+  // action:run message would do before receiving the refreshed account back.
+  assert.equal(await session.ensureFreshToken(stale), 'at-2')
+
+  const tokenCalls = stub.calls.filter((c) => c.url === 'https://x.test/oauth/token')
+  assert.equal(tokenCalls.length, 1)
 })
 
 test('logout revokes best-effort and removes the account', async () => {

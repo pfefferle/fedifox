@@ -19,13 +19,16 @@ browser.runtime.onMessage.addListener((message, sender) => router.handle(message
 
 browser.webRequest.onHeadersReceived.addListener((details) => {
   const link = (details.responseHeaders || []).find((h) => h.name.toLowerCase() === 'link')
-  if (link?.value) router.recordHeaderLinks(details.tabId, link.value, details.url)
+  router.recordHeaderLinks(details.tabId, link?.value || '', details.url)
 }, { urls: ['<all_urls>'], types: ['main_frame'] }, ['responseHeaders'])
 
 browser.tabs.onRemoved.addListener((tabId) => router.forgetTab(tabId))
 browser.tabs.onUpdated.addListener((tabId, info) => {
   if (info.status === 'loading') {
-    router.forgetTab(tabId)
+    // Firefox fires this twice per navigation (before and after the response),
+    // so only the tab's resolved resource is cleared here — the Link header
+    // captured by onHeadersReceived (which fires in between) must survive.
+    router.clearResource(tabId)
     browser.action.setBadgeText({ text: '', tabId }).catch(() => {})
   }
 })
@@ -48,8 +51,20 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!item || !tab?.id) return
   if (item.name === 'copy') {
     const { resource } = await router.handle({ type: 'tab:resource', tabId: tab.id })
-    if (resource) await navigator.clipboard.writeText(resource.id).catch(() => {})
+    if (resource) {
+      try {
+        await navigator.clipboard.writeText(resource.id)
+      } catch (e) {
+        console.warn('fedifox:', e.message, e)
+      }
+    }
     return
   }
-  await router.handle({ type: 'action:run', tabId: tab.id, name: item.name })
+  const res = await router.handle({ type: 'action:run', tabId: tab.id, name: item.name })
+  if (res.error) {
+    console.warn('fedifox:', res.error.message, res.error)
+    await browser.action.setTitle({ tabId: tab.id, title: `fedifox — ${res.error.message}` }).catch(() => {})
+  } else {
+    await browser.action.setTitle({ tabId: tab.id, title: 'fedifox' }).catch(() => {})
+  }
 })

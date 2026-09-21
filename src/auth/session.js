@@ -98,22 +98,30 @@ export function createSession ({ store, client, browser, fetch = globalThis.fetc
   }
 
   async function ensureFreshToken (account) {
-    if (account.expiresAt == null || account.expiresAt - now() > TOKEN_REFRESH_LEEWAY_MS) return account.accessToken
-    if (!account.refreshToken) return account.accessToken
+    // Re-read the stored account rather than trusting the caller's (possibly
+    // stale) copy: several calls can share one in-flight message (e.g. an
+    // action:run followed by its actions.state scans), and after the first
+    // refresh those callers still hold the pre-refresh object. Deciding from
+    // the store means the later calls see the just-refreshed token instead of
+    // refreshing a second time — which, under refresh-token rotation, would
+    // fail and incorrectly flag the account as needing reauth.
+    const current = (await store.getAccount(account.actorId)) || account
+    if (current.expiresAt == null || current.expiresAt - now() > TOKEN_REFRESH_LEEWAY_MS) return current.accessToken
+    if (!current.refreshToken) return current.accessToken
     try {
-      const as = await asFor(account)
+      const as = await asFor(current)
       const creds = await store.getClientCreds(as.issuer)
       if (!creds) throw new Error('no client credentials cached')
-      const response = await oauth.refreshTokenGrantRequest(as, oauthClient(creds), clientAuth(creds), account.refreshToken, oauthOptions())
+      const response = await oauth.refreshTokenGrantRequest(as, oauthClient(creds), clientAuth(creds), current.refreshToken, oauthOptions())
       const tokens = await oauth.processRefreshTokenResponse(as, oauthClient(creds), response)
-      const updated = { ...account, accessToken: tokens.access_token, needsReauth: false }
+      const updated = { ...current, accessToken: tokens.access_token, needsReauth: false }
       if (tokens.refresh_token) updated.refreshToken = tokens.refresh_token
       if (tokens.expires_in) updated.expiresAt = now() + tokens.expires_in * 1000
       await store.saveAccount(updated)
       return updated.accessToken
     } catch (cause) {
-      await store.saveAccount({ ...account, needsReauth: true })
-      throw new FedifoxError(`Session for ${account.handle} expired — log in again`, { step: 'refresh-token', detail: cause?.message, cause })
+      await store.saveAccount({ ...current, needsReauth: true })
+      throw new FedifoxError(`Session for ${current.handle} expired — log in again`, { step: 'refresh-token', detail: cause?.message, cause })
     }
   }
 

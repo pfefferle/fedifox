@@ -28,7 +28,7 @@ function setup ({ resource = note } = {}) {
     async login ({ input }) { calls.push(['login', input]); await store.saveAccount(account); await store.setSelectedActorId(account.actorId); return account },
     async logout (actorId) { calls.push(['logout', actorId]); await store.removeAccount(actorId) }
   }
-  const router = createRouter({ store, session, resolver, actions, browser, now: () => 1 })
+  const router = createRouter({ store, session, resolver, actions, browser })
   return { router, store, browser, calls }
 }
 
@@ -77,6 +77,29 @@ test('action:run dispatches with account and resource, returns fresh state', asy
   assert.deepEqual(calls.at(-1), ['reply', 'hi'])
   await router.handle({ type: 'action:run', tabId: 7, name: 'mention', text: 'yo' })
   assert.deepEqual(calls.at(-1), ['mention', 'https://y.test/users/bob', 'yo'])
+})
+
+test('a page:discovered that resolves after the tab navigated away does not resurrect a stale resource', async () => {
+  const store = createStore(createStorageArea())
+  const browser = makeBrowser()
+  let router
+  const resolver = {
+    async resolve () {
+      // Simulate the tab navigating away while this resolve is still in flight.
+      router.clearResource(7)
+      return note
+    }
+  }
+  const actions = {
+    async state () { return { liked: false, shared: false, following: false, followingAuthor: false } }
+  }
+  const session = { async login () {}, async logout () {} }
+  router = createRouter({ store, session, resolver, actions, browser })
+
+  const res = await router.handle({ type: 'page:discovered', url: 'https://y.test/page', objectCandidates: [], actorCandidates: [] }, { tab: { id: 7 } })
+  assert.deepEqual(res, { ok: true })
+  assert.deepEqual(await router.handle({ type: 'tab:resource', tabId: 7 }), { resource: null })
+  assert.ok(!browser.badges.some((b) => b.tabId === 7 && b.text === 'AP'))
 })
 
 test('errors are returned, not thrown', async () => {
