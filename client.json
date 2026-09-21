@@ -1,0 +1,11 @@
+{
+  "client_id": "https://pfefferle.github.io/fedifox/client.json",
+  "client_name": "fedifox",
+  "client_uri": "https://github.com/pfefferle/fedifox",
+  "redirect_uris": ["REPLACE_WITH_browser.identity.getRedirectURL()"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none",
+  "software_id": "7f3c2b1e-6d4a-4f8e-9b0c-fedif0x00001",
+  "software_version": "0.1.0"
+}
