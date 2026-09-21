@@ -27,6 +27,7 @@ export function headerCandidates (value, baseUrl) {
 
 const list = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]).map((x) => (typeof x === 'string' ? x : x?.id)).filter(Boolean)
 const hostOf = (url) => { try { return new URL(url).host } catch { return null } }
+const handleOf = (obj) => (obj?.preferredUsername && hostOf(obj.id)) ? `${obj.preferredUsername}@${hostOf(obj.id)}` : undefined
 
 function author (attributedTo) {
   const first = Array.isArray(attributedTo) ? attributedTo[0] : attributedTo
@@ -35,7 +36,8 @@ function author (attributedTo) {
   if (!first.id) return undefined
   const out = { id: first.id }
   if (first.name) out.name = first.name
-  if (first.preferredUsername && hostOf(first.id)) out.handle = `${first.preferredUsername}@${hostOf(first.id)}`
+  const handle = handleOf(first)
+  if (handle) out.handle = handle
   return out
 }
 
@@ -61,7 +63,7 @@ export function classify (json, pageUrl) {
     type,
     name: json.name || undefined,
     summary: json.summary || undefined,
-    handle: kind === 'actor' && json.preferredUsername && hostOf(json.id) ? `${json.preferredUsername}@${hostOf(json.id)}` : undefined,
+    handle: kind === 'actor' ? handleOf(json) : undefined,
     url: htmlUrl(json, pageUrl),
     attributedTo: author(json.attributedTo),
     audience: { to: list(json.to), cc: list(json.cc) }
@@ -73,9 +75,10 @@ export async function resolveAuthor (resource, { client, account }) {
   if (!a || (a.name && a.handle)) return resource
   try {
     const actor = await client.fetchObject(a.id, { account })
-    const filled = { id: a.id }
+    const filled = { ...a }
     if (actor.name || actor.preferredUsername) filled.name = actor.name || actor.preferredUsername
-    if (actor.preferredUsername && hostOf(actor.id)) filled.handle = `${actor.preferredUsername}@${hostOf(actor.id)}`
+    const handle = handleOf(actor)
+    if (handle) filled.handle = handle
     return { ...resource, attributedTo: filled }
   } catch {
     return resource

@@ -36,6 +36,13 @@ test('resolveAuthor fills name and handle', async () => {
   assert.deepEqual(resource.attributedTo, { id: bob.id, name: 'Bob', handle: 'bob@y.test' })
 })
 
+test('resolveAuthor keeps a known name when the actor fetch adds nothing', async () => {
+  const { fetch } = createFetchStub({ 'GET https://y.test/users/bob': { body: { id: bob.id, type: 'Person' } } })
+  const client = createClient({ fetch })
+  const resource = await resolveAuthor({ ...classify(note, 'p'), attributedTo: { id: bob.id, name: 'Bob' } }, { client })
+  assert.deepEqual(resource.attributedTo, { id: bob.id, name: 'Bob' })
+})
+
 test('resolver: HTML candidate wins, result cached', async () => {
   const stub = createFetchStub({ 'GET https://y.test/posts/1': { body: note }, 'GET https://y.test/users/bob': { body: bob } })
   const client = createClient({ fetch: stub.fetch })
