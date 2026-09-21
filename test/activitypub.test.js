@@ -86,3 +86,11 @@ test('webfinger errors are FedifoxErrors', async () => {
   await assert.rejects(client.webfinger('nobody@y.test'), (e) => e.step === 'webfinger' && e.status === 404)
   await assert.rejects(client.webfinger('not-a-handle'), (e) => e.step === 'webfinger')
 })
+
+test('network failures become FedifoxErrors naming the host', async () => {
+  const fetch = async () => { throw new TypeError('NetworkError when attempting to fetch resource.') }
+  const client = createClient({ fetch })
+  await assert.rejects(client.fetchObject('https://down.test/o'), (e) => e.name === 'FedifoxError' && e.step === 'fetch-object' && /down\.test/.test(e.message))
+  await assert.rejects(client.postActivity(account, { type: 'Like' }), (e) => e.name === 'FedifoxError' && e.step === 'post-activity' && /x\.test/.test(e.message))
+  await assert.rejects(client.webfinger('bob@down.test'), (e) => e.name === 'FedifoxError' && e.step === 'webfinger')
+})

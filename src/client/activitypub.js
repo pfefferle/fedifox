@@ -16,6 +16,14 @@ export function createClient ({ fetch = globalThis.fetch, getAccessToken = async
     return { Authorization: `Bearer ${await getAccessToken(account)}` }
   }
 
+  async function request (url, init, step) {
+    try {
+      return await fetch(url, init)
+    } catch (cause) {
+      throw new FedifoxError(`Could not reach ${hostOf(url)}`, { step, status: undefined, detail: cause?.message, cause })
+    }
+  }
+
   async function readJson (res, step, url) {
     const contentType = res.headers.get('content-type')
     if (!res.ok) {
@@ -33,23 +41,23 @@ export function createClient ({ fetch = globalThis.fetch, getAccessToken = async
     const step = 'fetch-object'
     let res
     if (account?.proxyUrl) {
-      res = await fetch(account.proxyUrl, {
+      res = await request(account.proxyUrl, {
         method: 'POST',
         headers: { Accept: AP_ACCEPT, 'Content-Type': 'application/x-www-form-urlencoded', ...(await authHeaders(account)) },
         body: new URLSearchParams({ id: url }).toString()
-      })
+      }, step)
     } else {
-      res = await fetch(url, { headers: { Accept: AP_ACCEPT, ...(await authHeaders(account)) } })
+      res = await request(url, { headers: { Accept: AP_ACCEPT, ...(await authHeaders(account)) } }, step)
     }
     return readJson(res, step, url)
   }
 
   async function postActivity (account, activity) {
-    const res = await fetch(account.outbox, {
+    const res = await request(account.outbox, {
       method: 'POST',
       headers: { 'Content-Type': AP_CONTENT_TYPE, Accept: AP_ACCEPT, ...(await authHeaders(account)) },
       body: JSON.stringify(activity)
-    })
+    }, 'post-activity')
     if (!res.ok) {
       const detail = await res.text().catch(() => '')
       throw new FedifoxError(`${hostOf(account.outbox)} rejected the ${activity.type} (${res.status})`, { step: 'post-activity', status: res.status, detail })
@@ -88,7 +96,7 @@ export function createClient ({ fetch = globalThis.fetch, getAccessToken = async
     const [user, domain] = clean.split('@')
     if (!user || !domain) throw new FedifoxError(`"${handle}" is not a user@domain handle`, { step: 'webfinger' })
     const url = `https://${domain}/.well-known/webfinger?resource=${encodeURIComponent(`acct:${clean}`)}`
-    const res = await fetch(url, { headers: { Accept: 'application/jrd+json, application/json' } })
+    const res = await request(url, { headers: { Accept: 'application/jrd+json, application/json' } }, 'webfinger')
     const jrd = await readJson(res, 'webfinger', url)
     const link = (jrd.links || []).find((l) => l.rel === 'self' && isApMediaType(l.type))
     if (!link?.href) throw new FedifoxError(`${domain} has no ActivityPub actor for ${clean}`, { step: 'webfinger', detail: JSON.stringify(jrd.links || []) })
