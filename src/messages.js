@@ -1,0 +1,104 @@
+import { describeError, FedifoxError } from './errors.js'
+import { headerCandidates } from './discovery/resolver.js'
+
+export function createRouter ({ store, session, resolver, actions, browser, now = () => Date.now() }) {
+  const tabResources = new Map()
+  const tabHeaderLinks = new Map()
+
+  async function setBadge (tabId, resource) {
+    try {
+      await browser.action.setBadgeBackgroundColor({ color: '#6364ff', tabId })
+      await browser.action.setBadgeText({ text: resource ? 'AP' : '', tabId })
+    } catch { /* tab may be gone */ }
+  }
+
+  async function requireAccount () {
+    const account = await store.getSelectedAccount()
+    if (!account) throw new FedifoxError('Log in to a fediverse account first', { step: 'account' })
+    if (account.needsReauth) throw new FedifoxError(`Session for ${account.handle} expired — log in again`, { step: 'account' })
+    return account
+  }
+
+  function requireResource (tabId) {
+    const resource = tabResources.get(tabId)
+    if (!resource) throw new FedifoxError('No ActivityPub object found on this page', { step: 'discover' })
+    return resource
+  }
+
+  function requireAuthor (resource) {
+    const author = resource.attributedTo
+    if (!author?.id) throw new FedifoxError('This object has no author to act on', { step: 'action' })
+    return author
+  }
+
+  const runners = {
+    like: (a, r) => actions.like(a, r),
+    undoLike: (a, r) => actions.undoLike(a, r),
+    share: (a, r) => actions.share(a, r),
+    undoShare: (a, r) => actions.undoShare(a, r),
+    follow: (a, r) => actions.follow(a, r.id),
+    undoFollow: (a, r) => actions.undoFollow(a, r.id),
+    followAuthor: (a, r) => actions.follow(a, requireAuthor(r).id),
+    undoFollowAuthor: (a, r) => actions.undoFollow(a, requireAuthor(r).id),
+    reply: (a, r, text) => actions.reply(a, r, text),
+    mention: (a, r, text) => actions.mention(a, r.kind === 'actor' ? { id: r.id, handle: r.handle || new URL(r.id).host } : requireAuthor(r), text)
+  }
+
+  const handlers = {
+    async 'page:discovered' (msg, sender) {
+      const tabId = sender?.tab?.id
+      const account = (await store.getSelectedAccount()) || undefined
+      const resource = await resolver.resolve({
+        pageUrl: msg.url,
+        objectCandidates: msg.objectCandidates || [],
+        actorCandidates: msg.actorCandidates || [],
+        headerLinks: tabHeaderLinks.get(tabId) || [],
+        account
+      })
+      if (tabId != null) {
+        tabResources.set(tabId, resource)
+        await setBadge(tabId, resource)
+      }
+      return { ok: true }
+    },
+    async 'tab:resource' (msg) { return { resource: tabResources.get(msg.tabId) || null } },
+    async 'accounts:list' () { return { accounts: await store.getAccounts(), selectedActorId: await store.getSelectedActorId() } },
+    async 'accounts:select' (msg) { await store.setSelectedActorId(msg.actorId); return { ok: true } },
+    async 'auth:login' (msg) { return { account: await session.login({ input: msg.input, manual: msg.manual }) } },
+    async 'auth:logout' (msg) { await session.logout(msg.actorId); return { ok: true } },
+    async 'action:state' (msg) {
+      const account = await requireAccount()
+      const resource = requireResource(msg.tabId)
+      return { state: await actions.state(account, resource) }
+    },
+    async 'action:run' (msg) {
+      const account = await requireAccount()
+      const resource = requireResource(msg.tabId)
+      const run = runners[msg.name]
+      if (!run) throw new FedifoxError(`Unknown action ${msg.name}`, { step: 'action' })
+      const { activityId } = await run(account, resource, msg.text || '')
+      return { activityId, state: await actions.state(account, resource) }
+    }
+  }
+
+  return {
+    async handle (message, sender) {
+      try {
+        const handler = handlers[message?.type]
+        if (!handler) throw new FedifoxError(`Unknown message type ${message?.type}`, { step: 'router' })
+        return await handler(message, sender)
+      } catch (e) {
+        return { error: describeError(e) }
+      }
+    },
+    recordHeaderLinks (tabId, linkHeaderValue, baseUrl) {
+      tabHeaderLinks.set(tabId, headerCandidates(linkHeaderValue, baseUrl))
+    },
+    forgetTab (tabId) {
+      tabResources.delete(tabId)
+      tabHeaderLinks.delete(tabId)
+    },
+    hasResource: (tabId) => Boolean(tabResources.get(tabId)),
+    now
+  }
+}
