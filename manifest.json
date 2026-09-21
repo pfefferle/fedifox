@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "fedifox",
+  "version": "0.1.0",
+  "description": "Like, share, follow and reply to the ActivityPub object behind any web page from your own fediverse account.",
+  "browser_specific_settings": {
+    "gecko": { "id": "fedifox@pfefferle.org", "strict_min_version": "128.0" }
+  },
+  "action": {
+    "default_title": "fedifox",
+    "default_popup": "src/popup/popup.html"
+  },
+  "background": {
+    "scripts": ["src/background.js"],
+    "type": "module"
+  },
+  "content_scripts": [
+    { "matches": ["<all_urls>"], "js": ["src/content.js"], "run_at": "document_idle" }
+  ],
+  "permissions": ["storage", "identity", "contextMenus", "webRequest", "activeTab", "clipboardWrite"],
+  "host_permissions": ["<all_urls>"]
+}

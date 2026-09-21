@@ -1,0 +1,21 @@
+{
+  "name": "fedifox",
+  "version": "0.1.0",
+  "description": "Interact with the ActivityPub object behind any web page from your own fediverse account.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "lint": "eslint src test scripts",
+    "start": "web-ext run --source-dir . --firefox-profile fedifox-dev --keep-profile-changes",
+    "build": "web-ext build --source-dir . --artifacts-dir dist --overwrite-dest --ignore-files docs node_modules test scripts dist eslint.config.js package-lock.json",
+    "vendor": "node scripts/vendor.js"
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "^5.0.0",
+    "eslint": "^10.11.0",
+    "oauth4webapi": "3.8.8",
+    "web-ext": "^10.7.0"
+  },
+  "engines": { "node": ">=22" }
+}
