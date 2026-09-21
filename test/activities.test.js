@@ -35,3 +35,12 @@ test('renderContent links handles already present and escapes the rest', () => {
 test('empty addressing arrays are omitted', () => {
   assert.deepEqual(like('https://y.test/o', { to: [], cc: [] }), { '@context': AS2_CONTEXT, type: 'Like', object: 'https://y.test/o' })
 })
+
+test('renderContent does not sever a handle that is a prefix of another', () => {
+  const short = { id: 'https://example.com/users/bob', handle: 'bob@example.com' }
+  const long = { id: 'https://example.com.au/users/bob', handle: 'bob@example.com.au' }
+  assert.equal(
+    renderContent('@bob@example.com.au and @bob@example.com hi', [long, short]),
+    '<p><a href="https://example.com.au/users/bob" class="u-url mention">@bob@example.com.au</a> and <a href="https://example.com/users/bob" class="u-url mention">@bob@example.com</a> hi</p>'
+  )
+})

@@ -19,12 +19,14 @@ export function mentionTag ({ id, handle }) {
 // Renders user text as a single <p>, linking any @handle that belongs to a
 // known mention. The first mention is prepended when the user did not type it.
 export function renderContent (text, mentions = []) {
+  const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   let html = escapeHtml(text.trim())
   for (const m of mentions) {
-    html = html.replaceAll(`@${escapeHtml(m.handle)}`, mentionLink(m))
+    const pattern = new RegExp(`@${escapeRegExp(escapeHtml(m.handle))}(?![A-Za-z0-9._-])`, 'g')
+    html = html.replace(pattern, () => mentionLink(m))
   }
   const first = mentions[0]
-  if (first && !text.trim().startsWith(`@${first.handle}`)) {
+  if (first && !new RegExp(`^@${escapeRegExp(first.handle)}(?![A-Za-z0-9._-])`).test(text.trim())) {
     html = `${mentionLink(first)} ${html}`
   }
   return `<p>${html.replaceAll('\n', '<br>')}</p>`
