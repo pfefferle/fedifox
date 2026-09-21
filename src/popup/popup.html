@@ -1,1 +1,55 @@
-<!doctype html><html><head><meta charset="utf-8"><title>fedifox</title></head><body><p>fedifox</p></body></html>
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>fedifox</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <strong>fedifox</strong>
+    <select id="account" hidden></select>
+    <button id="logout" hidden title="Log out">⏏</button>
+  </header>
+
+  <section id="login" hidden>
+    <form id="login-form">
+      <label>Fediverse account
+        <input id="login-input" placeholder="user@example.org or actor URL" required autofocus>
+      </label>
+      <details>
+        <summary>Advanced</summary>
+        <label>Client ID <input id="client-id"></label>
+        <label>Client secret <input id="client-secret" type="password"></label>
+      </details>
+      <button type="submit">Log in</button>
+    </form>
+  </section>
+
+  <section id="resource" hidden>
+    <div class="card">
+      <span id="kind" class="pill"></span>
+      <a id="title" target="_blank" rel="noopener"></a>
+      <div id="subtitle" class="muted"></div>
+    </div>
+    <div id="buttons" class="buttons"></div>
+    <form id="compose" hidden>
+      <textarea id="compose-text" rows="3" required></textarea>
+      <div class="row">
+        <button type="submit" id="compose-send">Send</button>
+        <button type="button" id="compose-cancel">Cancel</button>
+      </div>
+    </form>
+    <button id="copy" class="link">Copy fediverse link</button>
+  </section>
+
+  <section id="empty" hidden><p class="muted">No ActivityPub object found on this page.</p></section>
+
+  <footer id="status" hidden>
+    <span id="status-text"></span>
+    <details id="status-details" hidden><summary>details</summary><pre id="status-pre"></pre></details>
+  </footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
