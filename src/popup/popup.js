@@ -49,7 +49,10 @@ function renderButtons (state) {
     const btn = document.createElement('button')
     btn.textContent = b.label
     btn.classList.toggle('active', b.active)
-    btn.addEventListener('click', () => (b.name === 'reply' || b.name === 'mention') ? openCompose(b.name) : runAction(b.name))
+    btn.addEventListener('click', () => {
+      if (b.name === 'reply' || b.name === 'mention') { openCompose(b.name); return }
+      runAction(b.name).catch((e) => fail({ message: e.message }))
+    })
     wrap.append(btn)
   }
 }
@@ -65,9 +68,17 @@ async function loadResource () {
   $('title').textContent = view.title
   $('title').href = view.link
   $('subtitle').textContent = view.subtitle
-  renderButtons({ liked: false, shared: false, following: false, followingAuthor: false })
   const st = await send({ type: 'action:state', tabId })
-  if (st.error) { if (st.error.step !== 'account') fail(st.error); return }
+  if (st.error) {
+    $('buttons').innerHTML = ''
+    if (st.error.step === 'account') {
+      setStatus(st.error.message)
+      if (st.error.message.includes('expired')) $('login').hidden = false
+    } else {
+      fail(st.error)
+    }
+    return
+  }
   renderButtons(st.state)
 }
 
@@ -111,22 +122,28 @@ $('account').addEventListener('change', async (e) => {
     $('login').hidden = false
     return
   }
-  await send({ type: 'accounts:select', actorId: e.target.value })
+  const res = await send({ type: 'accounts:select', actorId: e.target.value })
+  if (res.error) return fail(res.error)
   await loadResource()
 })
 
 $('logout').addEventListener('click', async () => {
   const actorId = $('account').value
   if (!actorId || actorId === '__add__') return
-  await send({ type: 'auth:logout', actorId })
+  const res = await send({ type: 'auth:logout', actorId })
+  if (res.error) return fail(res.error)
   await loadAccounts()
   await loadResource()
 })
 
 $('copy').addEventListener('click', async () => {
   if (!resource) return
-  await navigator.clipboard.writeText(resource.id)
-  setStatus('Copied fediverse link')
+  try {
+    await navigator.clipboard.writeText(resource.id)
+    setStatus('Copied fediverse link')
+  } catch (e) {
+    fail({ message: e.message })
+  }
 })
 
 ;(async () => {
