@@ -73,6 +73,15 @@ test('login accepts an actor URL and surfaces user cancellation', async () => {
   assert.deepEqual(await store.getAccounts(), [])
 })
 
+test('a network failure at the token endpoint is a FedifoxError', async () => {
+  const { store, stub, client } = setup()
+  stub.routes['POST https://x.test/oauth/token'] = () => { throw new TypeError('NetworkError when attempting to fetch resource.') }
+  const browser = makeBrowser((url) => `${redirectUri}?code=abc&state=${url.searchParams.get('state')}`)
+  const session = createSession({ store, client, browser, fetch: stub.fetch, oauth, now: () => 5000 })
+  await assert.rejects(session.login({ input: 'alice@x.test' }), (e) => e.name === 'FedifoxError' && e.step === 'token' && /x\.test/.test(e.message))
+  assert.deepEqual(await store.getAccounts(), [])
+})
+
 test('ensureFreshToken refreshes near expiry and flags failure', async () => {
   const { store, stub, client } = setup({ tokenBody: { access_token: 'at-2', token_type: 'bearer', expires_in: 3600, refresh_token: 'rt-2' } })
   const session = createSession({ store, client, browser: makeBrowser(() => ''), fetch: stub.fetch, oauth, now: () => 10_000 })

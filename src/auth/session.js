@@ -82,12 +82,13 @@ export function createSession ({ store, client, browser, fetch = globalThis.fetc
       throw new FedifoxError(`${hostOf(as.authorization_endpoint)} returned an invalid authorization response`, { step: 'authorize', detail: cause?.message, cause })
     }
 
-    const response = await oauth.authorizationCodeGrantRequest(as, oauthClient(creds), clientAuth(creds), params, redirectUri, codeVerifier, oauthOptions())
     let tokens
+    let response
     try {
+      response = await oauth.authorizationCodeGrantRequest(as, oauthClient(creds), clientAuth(creds), params, redirectUri, codeVerifier, oauthOptions())
       tokens = await oauth.processAuthorizationCodeResponse(as, oauthClient(creds), response)
     } catch (cause) {
-      throw new FedifoxError(`${hostOf(as.token_endpoint)} refused the token exchange`, { step: 'token', status: response.status, detail: cause?.message, cause })
+      throw new FedifoxError(`${hostOf(as.token_endpoint)} refused the token exchange`, { step: 'token', status: response?.status, detail: cause?.message, cause })
     }
 
     const account = accountFromActor(actor, tokens, { asOrigin: as.issuer, now: now() })
