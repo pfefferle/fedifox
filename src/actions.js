@@ -31,28 +31,36 @@ export function createActions ({ client, store, now = () => Date.now() }) {
   }
 
   // POST first, record only on success so a rejected activity leaves no trace.
+  // The record is written even when the server did not return an id, so state()
+  // (records-only for shares) stays truthful; undo then explains why it can't proceed.
   async function perform (account, type, targetId, activity) {
     const { activityId } = await client.postActivity(account, activity)
-    if (activityId) await store.saveActionRecord(account.actorId, type, targetId, activityId, now())
+    await store.saveActionRecord(account.actorId, type, targetId, activityId ?? null, now())
     return { activityId }
   }
 
   async function undoOf (account, type, targetId, addressing) {
     const record = await store.getActionRecord(account.actorId, type, targetId)
     if (!record) throw new FedifoxError(`Nothing to undo: fedifox has no ${type} of this on record`, { step: 'undo', detail: targetId })
+    if (!record.activityId) throw new FedifoxError(`Cannot undo: the server did not return an id for the ${type}`, { step: 'undo', detail: targetId })
     const result = await client.postActivity(account, build.undo(record.activityId, addressing))
     await store.removeActionRecord(account.actorId, type, targetId)
     return { activityId: result.activityId }
   }
 
-  const objectAddressing = (resource) => ({ to: authorId(resource) ? [authorId(resource)] : [], cc: [AS_PUBLIC] })
+  const objectAddressing = (resource) => {
+    const author = authorId(resource)
+    return { to: author ? [author] : [], cc: [AS_PUBLIC] }
+  }
+
+  const shareAddressing = (account, resource) => ({ to: objectAddressing(resource).to, cc: [AS_PUBLIC, account.followers].filter(Boolean) })
 
   return {
     state,
     like: (account, resource) => perform(account, 'Like', resource.id, build.like(resource.id, objectAddressing(resource))),
     undoLike: (account, resource) => undoOf(account, 'Like', resource.id, objectAddressing(resource)),
-    share: (account, resource) => perform(account, 'Announce', resource.id, build.announce(resource.id, { to: objectAddressing(resource).to, cc: [AS_PUBLIC, account.followers].filter(Boolean) })),
-    undoShare: (account, resource) => undoOf(account, 'Announce', resource.id, { to: objectAddressing(resource).to, cc: [AS_PUBLIC, account.followers].filter(Boolean) }),
+    share: (account, resource) => perform(account, 'Announce', resource.id, build.announce(resource.id, shareAddressing(account, resource))),
+    undoShare: (account, resource) => undoOf(account, 'Announce', resource.id, shareAddressing(account, resource)),
     follow: (account, actorId) => perform(account, 'Follow', actorId, build.follow(actorId)),
     undoFollow: (account, actorId) => undoOf(account, 'Follow', actorId, { to: [actorId] }),
     async reply (account, resource, text) {

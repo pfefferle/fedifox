@@ -74,6 +74,18 @@ test('share addresses followers, follow addresses the actor', async () => {
   assert.equal(client.posted[2].object, 'https://x.test/act/2')
   await actions.undoShare(account, note)
   assert.equal(client.posted[3].object, 'https://x.test/act/1')
+  assert.deepEqual(client.posted[3].to, [bobId])
+  assert.deepEqual(client.posted[3].cc, [AS_PUBLIC, account.followers])
+})
+
+test('a POST that returns no activity id still records the action, and undo explains why it cannot', async () => {
+  const store = createStore(createStorageArea())
+  const client = fakeClient()
+  client.postActivity = async () => ({ activityId: null, status: 202 })
+  const actions = createActions({ client, store })
+  await actions.share(account, note)
+  assert.equal((await actions.state(account, note)).shared, true)
+  await assert.rejects(actions.undoShare(account, note), (e) => e.step === 'undo' && /did not return an id/.test(e.message))
 })
 
 test('reply inherits audience and mentions the author; mention targets the actor', async () => {
