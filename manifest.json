@@ -17,6 +17,9 @@
   "content_scripts": [
     { "matches": ["<all_urls>"], "js": ["src/content.js"], "run_at": "document_idle" }
   ],
+  "web_accessible_resources": [
+    { "resources": ["src/discovery/html.js", "src/constants.js"], "matches": ["<all_urls>"] }
+  ],
   "permissions": ["storage", "identity", "contextMenus", "webRequest", "activeTab", "clipboardWrite"],
   "host_permissions": ["<all_urls>"]
 }

@@ -1,1 +1,15 @@
-console.log('fedifox content script loaded')
+// Content scripts are classic scripts; dynamic import() pulls in the ESM code.
+;(async () => {
+  const { extractCandidates } = await import(browser.runtime.getURL('src/discovery/html.js'))
+  const links = [...document.querySelectorAll('link[rel], a[rel]')].map((el) => ({
+    rel: el.getAttribute('rel'),
+    type: el.getAttribute('type'),
+    href: el.getAttribute('href')
+  }))
+  const { objectCandidates, actorCandidates } = extractCandidates(links, document.baseURI)
+  try {
+    await browser.runtime.sendMessage({ type: 'page:discovered', url: location.href, objectCandidates, actorCandidates })
+  } catch {
+    // background not ready or page is privileged
+  }
+})()
