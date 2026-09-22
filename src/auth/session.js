@@ -97,32 +97,77 @@ export function createSession ({ store, client, browser, fetch = globalThis.fetc
     return account
   }
 
-  async function ensureFreshToken (account) {
-    // Re-read the stored account rather than trusting the caller's (possibly
-    // stale) copy: several calls can share one in-flight message (e.g. an
-    // action:run followed by its actions.state scans), and after the first
-    // refresh those callers still hold the pre-refresh object. Deciding from
-    // the store means the later calls see the just-refreshed token instead of
-    // refreshing a second time — which, under refresh-token rotation, would
-    // fail and incorrectly flag the account as needing reauth.
-    const current = (await store.getAccount(account.actorId)) || account
-    if (current.expiresAt == null || current.expiresAt - now() > TOKEN_REFRESH_LEEWAY_MS) return current.accessToken
-    if (!current.refreshToken) return current.accessToken
+  // One refresh per account at a time: concurrent callers (an action:run and
+  // its state scans, several tabs) share the pending promise. Under
+  // refresh-token rotation a second concurrent refresh would fail and lock
+  // the account for no reason.
+  const inflight = new Map()
+
+  function refreshShared (current) {
+    const pending = inflight.get(current.actorId)
+    if (pending) return pending
+    const p = refresh(current).finally(() => inflight.delete(current.actorId))
+    inflight.set(current.actorId, p)
+    return p
+  }
+
+  // The account is only flagged for re-login when the token endpoint itself
+  // rejected the grant. Anything else (network, 5xx, discovery hiccup) is
+  // transient and leaves the stored account untouched.
+  const isOAuthRejection = (cause, response) =>
+    cause instanceof oauth.ResponseBodyError ||
+    cause instanceof oauth.WWWAuthenticateChallengeError ||
+    response?.status === 400 || response?.status === 401
+
+  // Never write an account that was logged out while the refresh was in flight.
+  async function saveIfPresent (account) {
+    if (await store.getAccount(account.actorId)) await store.saveAccount(account)
+  }
+
+  async function refresh (current) {
+    let as
+    let response
     try {
-      const as = await asFor(current)
+      as = await asFor(current)
       const creds = await store.getClientCreds(as.issuer)
-      if (!creds) throw new Error('no client credentials cached')
-      const response = await oauth.refreshTokenGrantRequest(as, oauthClient(creds), clientAuth(creds), current.refreshToken, oauthOptions())
+      if (!creds) throw new FedifoxError(`No client credentials for ${hostOf(as.issuer)} — log in again`, { step: 'refresh-token' })
+      response = await oauth.refreshTokenGrantRequest(as, oauthClient(creds), clientAuth(creds), current.refreshToken, oauthOptions())
       const tokens = await oauth.processRefreshTokenResponse(as, oauthClient(creds), response)
       const updated = { ...current, accessToken: tokens.access_token, needsReauth: false }
       if (tokens.refresh_token) updated.refreshToken = tokens.refresh_token
       if (tokens.expires_in) updated.expiresAt = now() + tokens.expires_in * 1000
-      await store.saveAccount(updated)
+      else delete updated.expiresAt
+      await saveIfPresent(updated)
       return updated.accessToken
     } catch (cause) {
-      await store.saveAccount({ ...current, needsReauth: true })
-      throw new FedifoxError(`Session for ${current.handle} expired — log in again`, { step: 'refresh-token', detail: cause?.message, cause })
+      if (isOAuthRejection(cause, response)) {
+        await saveIfPresent({ ...current, needsReauth: true })
+        throw new FedifoxError(`Session for ${current.handle} expired — log in again`, { step: 'refresh-token', status: response?.status, detail: cause?.message, cause })
+      }
+      if (cause instanceof FedifoxError && cause.step === 'refresh-token') throw cause
+      const host = hostOf(as?.token_endpoint || current.actorId)
+      throw new FedifoxError(`Could not reach ${host}`, { step: 'refresh-token', status: response?.status, detail: cause?.message, cause })
     }
+  }
+
+  async function ensureFreshToken (account) {
+    // Re-read the stored account rather than trusting the caller's (possibly
+    // stale) copy: after one refresh, later callers within the same message
+    // still hold the pre-refresh object. Deciding from the store means they
+    // see the just-refreshed token instead of refreshing a second time.
+    const current = (await store.getAccount(account.actorId)) || account
+    if (current.expiresAt == null || current.expiresAt - now() > TOKEN_REFRESH_LEEWAY_MS) return current.accessToken
+    if (!current.refreshToken) return current.accessToken
+    return refreshShared(current)
+  }
+
+  // Used after a 401 on a request that carried the bearer: refresh now,
+  // whatever the stored expiry says. Returns null when there is nothing to
+  // refresh with.
+  async function forceRefresh (account) {
+    const current = (await store.getAccount(account.actorId)) || account
+    if (!current.refreshToken) return null
+    return refreshShared(current)
   }
 
   async function logout (actorId) {
@@ -141,5 +186,5 @@ export function createSession ({ store, client, browser, fetch = globalThis.fetc
     await store.removeAccount(actorId)
   }
 
-  return { login, ensureFreshToken, logout }
+  return { login, ensureFreshToken, forceRefresh, logout }
 }

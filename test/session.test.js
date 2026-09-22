@@ -120,6 +120,102 @@ test('ensureFreshToken re-reads the stored account, so a second call with the sa
   assert.equal(tokenCalls.length, 1)
 })
 
+async function expiring (store, { refreshToken = 'rt-1' } = {}) {
+  const account = accountFromActor(actor, { access_token: 'at-1', refresh_token: refreshToken, expires_in: 30 }, { asOrigin: 'https://x.test', now: 0 })
+  await store.saveAccount(account)
+  await store.saveClientCreds('https://x.test', { clientId: 'dcr-1', source: 'dcr' })
+  return account
+}
+
+test('concurrent ensureFreshToken calls share one token request', async () => {
+  const { store, stub, client } = setup()
+  let release
+  const gate = new Promise((resolve) => { release = resolve })
+  stub.routes['POST https://x.test/oauth/token'] = async () => { await gate; return json({ access_token: 'at-2', token_type: 'bearer', expires_in: 3600, refresh_token: 'rt-2' }) }
+  const session = createSession({ store, client, browser: makeBrowser(() => ''), fetch: stub.fetch, oauth, now: () => 10_000 })
+  const account = await expiring(store)
+  const first = session.ensureFreshToken(account)
+  const second = session.ensureFreshToken(account)
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  release()
+  assert.deepEqual(await Promise.all([first, second]), ['at-2', 'at-2'])
+  assert.equal(stub.calls.filter((c) => c.url === 'https://x.test/oauth/token').length, 1)
+  // Once settled, the in-flight slot is free again.
+  await store.saveAccount({ ...(await store.getAccount(actor.id)), expiresAt: 0 })
+  assert.equal(await session.ensureFreshToken(account), 'at-2')
+  assert.equal(stub.calls.filter((c) => c.url === 'https://x.test/oauth/token').length, 2)
+})
+
+test('a transient refresh failure does not lock the account', async () => {
+  const { store, stub, client } = setup()
+  stub.routes['POST https://x.test/oauth/token'] = () => { throw new TypeError('NetworkError when attempting to fetch resource.') }
+  const session = createSession({ store, client, browser: makeBrowser(() => ''), fetch: stub.fetch, oauth, now: () => 10_000 })
+  const account = await expiring(store)
+  await assert.rejects(session.ensureFreshToken(account), (e) => e.name === 'FedifoxError' && e.step === 'refresh-token' && /Could not reach x\.test/.test(e.message))
+  assert.deepEqual(await store.getAccount(actor.id), account)
+  // A 5xx is transient too.
+  stub.routes['POST https://x.test/oauth/token'] = { status: 503, body: 'down', headers: { 'content-type': 'text/plain' } }
+  await assert.rejects(session.ensureFreshToken(account), (e) => e.step === 'refresh-token')
+  assert.equal((await store.getAccount(actor.id)).needsReauth, false)
+})
+
+test('an OAuth error response marks the account as needing reauth', async () => {
+  const { store, stub, client } = setup()
+  stub.routes['POST https://x.test/oauth/token'] = json({ error: 'invalid_grant' }, 400)
+  const session = createSession({ store, client, browser: makeBrowser(() => ''), fetch: stub.fetch, oauth, now: () => 10_000 })
+  const account = await expiring(store)
+  await assert.rejects(session.ensureFreshToken(account), (e) => e.step === 'refresh-token' && /log in again/.test(e.message))
+  assert.equal((await store.getAccount(actor.id)).needsReauth, true)
+  // Same for a bare 401 challenge without a JSON body.
+  await store.saveAccount({ ...account, needsReauth: false })
+  stub.routes['POST https://x.test/oauth/token'] = { status: 401, body: '', headers: { 'www-authenticate': 'Bearer error="invalid_token"' } }
+  await assert.rejects(session.ensureFreshToken(account), (e) => e.step === 'refresh-token')
+  assert.equal((await store.getAccount(actor.id)).needsReauth, true)
+})
+
+test('a refresh that finishes after logout does not resurrect the account', async () => {
+  const { store, stub, client } = setup()
+  stub.routes['POST https://x.test/oauth/token'] = async () => { await store.removeAccount(actor.id); return json({ access_token: 'at-2', token_type: 'bearer', expires_in: 3600 }) }
+  const session = createSession({ store, client, browser: makeBrowser(() => ''), fetch: stub.fetch, oauth, now: () => 10_000 })
+  const account = await expiring(store)
+  assert.equal(await session.ensureFreshToken(account), 'at-2')
+  assert.equal(await store.getAccount(actor.id), null)
+  // Likewise a rejection after logout must not write a needsReauth stub.
+  stub.routes['POST https://x.test/oauth/token'] = async () => { await store.removeAccount(actor.id); return json({ error: 'invalid_grant' }, 400) }
+  await expiring(store)
+  await assert.rejects(session.ensureFreshToken(account), (e) => e.step === 'refresh-token')
+  assert.equal(await store.getAccount(actor.id), null)
+})
+
+test('a refresh response without expires_in drops the stored expiry', async () => {
+  const { store, stub, client } = setup({ tokenBody: { access_token: 'at-2', token_type: 'bearer' } })
+  const session = createSession({ store, client, browser: makeBrowser(() => ''), fetch: stub.fetch, oauth, now: () => 10_000 })
+  const account = await expiring(store)
+  assert.equal(await session.ensureFreshToken(account), 'at-2')
+  const saved = await store.getAccount(actor.id)
+  assert.equal(saved.accessToken, 'at-2')
+  assert.equal('expiresAt' in saved, false)
+  assert.equal(saved.refreshToken, 'rt-1', 'refresh token is kept when not rotated')
+})
+
+test('forceRefresh refreshes regardless of expiry, or yields null without a refresh token', async () => {
+  const { store, stub, client } = setup({ tokenBody: { access_token: 'at-2', token_type: 'bearer', expires_in: 3600, refresh_token: 'rt-2' } })
+  const session = createSession({ store, client, browser: makeBrowser(() => ''), fetch: stub.fetch, oauth, now: () => 10_000 })
+  const account = accountFromActor(actor, { access_token: 'at-1', refresh_token: 'rt-1', expires_in: 3600 }, { asOrigin: 'https://x.test', now: 10_000 })
+  await store.saveAccount(account)
+  await store.saveClientCreds('https://x.test', { clientId: 'dcr-1', source: 'dcr' })
+  assert.equal(await session.ensureFreshToken(account), 'at-1')
+  assert.equal(await session.forceRefresh(account), 'at-2')
+  assert.equal((await store.getAccount(actor.id)).refreshToken, 'rt-2')
+  assert.equal(stub.calls.filter((c) => c.url === 'https://x.test/oauth/token').length, 1)
+
+  const noRefresh = { ...(await store.getAccount(actor.id)) }
+  delete noRefresh.refreshToken
+  await store.saveAccount(noRefresh)
+  assert.equal(await session.forceRefresh(noRefresh), null)
+  assert.equal(stub.calls.filter((c) => c.url === 'https://x.test/oauth/token').length, 1)
+})
+
 test('logout revokes best-effort and removes the account', async () => {
   const { store, stub, client } = setup()
   const session = createSession({ store, client, browser: makeBrowser(() => ''), fetch: stub.fetch, oauth, now: () => 0 })
