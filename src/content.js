@@ -1,13 +1,20 @@
 // Content scripts are classic scripts; dynamic import() pulls in the ESM code.
 const modules = import(browser.runtime.getURL('src/discovery/html.js'))
 
+// <link>/<a rel> elements describe the document that was loaded; after an
+// in-page (history API) navigation they are stale, so only the URL is sent
+// and the background falls back to content negotiation.
+const documentHref = location.href
+
 async function discover () {
   const { extractCandidates } = await modules
-  const links = [...document.querySelectorAll('link[rel], a[rel]')].map((el) => ({
-    rel: el.getAttribute('rel'),
-    type: el.getAttribute('type'),
-    href: el.getAttribute('href')
-  }))
+  const links = location.href === documentHref
+    ? [...document.querySelectorAll('link[rel], a[rel]')].map((el) => ({
+      rel: el.getAttribute('rel'),
+      type: el.getAttribute('type'),
+      href: el.getAttribute('href')
+    }))
+    : []
   const { objectCandidates, actorCandidates } = extractCandidates(links, document.baseURI)
   console.debug('fedifox: candidates', { objectCandidates, actorCandidates })
   try {

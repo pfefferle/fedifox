@@ -19,7 +19,7 @@ call in `src/background.js` while testing over http).
 - [ ] Open a page with only a `Link` header (curl -I to confirm) → discovered.
 - [ ] Open a non-fediverse page → "No ActivityPub object found".
 - [ ] Open a WP post, close the popup, wait 60 s (event page suspended), open the popup → card must still show.
-- [ ] Navigate inside a Mastodon web UI (SPA, no full page load) to another status → icon colour and card follow the new URL.
+- [ ] Navigate inside a Mastodon web UI (SPA, no full page load) to a profile or another status → icon colour and card follow the new URL without a reload.
 - [ ] With an account whose actor has `endpoints.proxyUrl`: the page URL is never `POST`ed to the proxy (check the network log); only `<link>`/header candidates are.
 
 ## Actions (each: check the WP admin / the target's collections)

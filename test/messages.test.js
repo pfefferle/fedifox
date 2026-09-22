@@ -158,3 +158,17 @@ test('errors are returned, not thrown', async () => {
   const badAction = await router.handle({ type: 'action:state', tabId: 99 })
   assert.match(badAction.error.message, /log in/i)
 })
+
+test('an in-page (pushState) navigation clears the tab and asks the content script to rediscover', async () => {
+  const { router, browser, calls } = setup({ browser: makeBrowser({ tabs: { 7: { url: 'https://m.test/@alice' } } }) })
+  await router.handle({ type: 'page:discovered', url: 'https://m.test/@alice/1', objectCandidates: ['https://m.test/users/alice/statuses/1'], actorCandidates: [] }, { tab: { id: 7 } })
+  router.recordHeaderLinks(7, '<https://m.test/users/alice/statuses/1>; rel="alternate"; type="application/activity+json"', 'https://m.test/@alice/1')
+  await router.tabNavigated(7)
+  assert.deepEqual(browser.icons.at(-2), { tabId: 7, path: 'icons/symbol.svg' })
+  assert.deepEqual(browser.icons.at(-1), { tabId: 7, shown: false })
+  assert.deepEqual(browser.sent.at(-1), [7, { type: 'page:rediscover' }])
+  // the Link header of the previous document must not leak into the new discovery
+  await router.handle({ type: 'page:discovered', url: 'https://m.test/@alice', objectCandidates: [], actorCandidates: [] }, { tab: { id: 7 } })
+  assert.deepEqual(calls.at(-1)[1].headerLinks, [])
+  assert.equal(calls.at(-1)[1].pageUrl, 'https://m.test/@alice')
+})

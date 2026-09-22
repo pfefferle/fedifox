@@ -138,6 +138,16 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
       tabHeaderLinks.delete(tabId)
       bumpGeneration(tabId)
     },
+    // A history.pushState navigation: no new document, no new response, so
+    // everything known about the tab is stale and the content script has to
+    // look again at the new URL.
+    async tabNavigated (tabId) {
+      tabResources.delete(tabId)
+      tabHeaderLinks.delete(tabId)
+      bumpGeneration(tabId)
+      await setIcon(tabId, null)
+      try { await browser.tabs.sendMessage(tabId, { type: 'page:rediscover' }) } catch { /* no content script on this tab */ }
+    },
     hasResource: async (tabId) => Boolean(await resourceFor(tabId))
   }
 }
