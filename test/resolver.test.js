@@ -54,6 +54,10 @@ test('resolver: HTML candidate wins, result cached', async () => {
   const again = await resolver.resolve({ pageUrl: 'https://y.test/page', objectCandidates: ['https://y.test/posts/1'] })
   assert.deepEqual(again, resource)
   assert.equal(stub.calls.length, 2)
+  // a fresh page load must not be answered from the cache
+  const fresh = await resolver.resolve({ pageUrl: 'https://y.test/page', objectCandidates: ['https://y.test/posts/1'], fresh: true })
+  assert.deepEqual(fresh, resource)
+  assert.equal(stub.calls.length, 4)
 })
 
 test('resolver: falls through failing candidates to header then conneg', async () => {

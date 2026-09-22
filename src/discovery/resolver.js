@@ -113,8 +113,10 @@ export function createResolver ({ client, store, now = () => Date.now() }) {
     }
   }
 
-  async function resolve ({ pageUrl, objectCandidates = [], actorCandidates = [], headerLinks = [], account }) {
-    const cached = await store.getDiscovery(pageUrl, now())
+  // `fresh` skips the cache: a page that just loaded is re-resolved; the cache
+  // only serves state restoration after the event page was suspended.
+  async function resolve ({ pageUrl, objectCandidates = [], actorCandidates = [], headerLinks = [], account, fresh = false }) {
+    const cached = fresh ? undefined : await store.getDiscovery(pageUrl, now())
     if (cached !== undefined) return cached
 
     let resource = null

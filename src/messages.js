@@ -86,7 +86,8 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
         objectCandidates: msg.objectCandidates || [],
         actorCandidates: msg.actorCandidates || [],
         headerLinks: tabHeaderLinks.get(tabId) || [],
-        account
+        account,
+        fresh: true
       })
       console.debug('fedifox: discovered', msg.url, resource ? `${resource.kind} ${resource.id}` : 'nothing', { tabId, stale: generation(tabId) !== gen })
       if (tabId != null && generation(tabId) === gen) {
