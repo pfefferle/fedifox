@@ -1,7 +1,17 @@
 import { AP_ACCEPT, AP_CONTENT_TYPE, COLLECTION_PAGE_LIMIT, isApMediaType } from '../constants.js'
 import { FedifoxError } from '../errors.js'
+import { hostOf, originOf } from '../url.js'
 
-const hostOf = (url) => { try { return new URL(url).host } catch { return url } }
+// The bearer token is only ever sent to the account's own server: its proxy,
+// its outbox, or any URL on the actor's origin (own collections). Everything
+// else — foreign objects, actors, page URLs — is fetched unauthenticated so a
+// crafted page can never make fedifox hand its token to a third party.
+export function bearerAllowed (account, url) {
+  if (!account) return false
+  if (url === account.proxyUrl || url === account.outbox) return true
+  const origin = originOf(url)
+  return origin !== null && origin === originOf(account.actorId)
+}
 
 function itemId (item) {
   if (typeof item === 'string') return item
@@ -11,8 +21,8 @@ function itemId (item) {
 }
 
 export function createClient ({ fetch = globalThis.fetch, getAccessToken = async (account) => account.accessToken } = {}) {
-  async function authHeaders (account) {
-    if (!account) return {}
+  async function authHeaders (account, url) {
+    if (!bearerAllowed(account, url)) return {}
     return { Authorization: `Bearer ${await getAccessToken(account)}` }
   }
 
@@ -43,11 +53,11 @@ export function createClient ({ fetch = globalThis.fetch, getAccessToken = async
     if (account?.proxyUrl) {
       res = await request(account.proxyUrl, {
         method: 'POST',
-        headers: { Accept: AP_ACCEPT, 'Content-Type': 'application/x-www-form-urlencoded', ...(await authHeaders(account)) },
+        headers: { Accept: AP_ACCEPT, 'Content-Type': 'application/x-www-form-urlencoded', ...(await authHeaders(account, account.proxyUrl)) },
         body: new URLSearchParams({ id: url }).toString()
       }, step)
     } else {
-      res = await request(url, { headers: { Accept: AP_ACCEPT, ...(await authHeaders(account)) } }, step)
+      res = await request(url, { headers: { Accept: AP_ACCEPT, ...(await authHeaders(account, url)) } }, step)
     }
     return readJson(res, step, url)
   }
@@ -55,7 +65,7 @@ export function createClient ({ fetch = globalThis.fetch, getAccessToken = async
   async function postActivity (account, activity) {
     const res = await request(account.outbox, {
       method: 'POST',
-      headers: { 'Content-Type': AP_CONTENT_TYPE, Accept: AP_ACCEPT, ...(await authHeaders(account)) },
+      headers: { 'Content-Type': AP_CONTENT_TYPE, Accept: AP_ACCEPT, ...(await authHeaders(account, account.outbox)) },
       body: JSON.stringify(activity)
     }, 'post-activity')
     if (!res.ok) {

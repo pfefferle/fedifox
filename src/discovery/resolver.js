@@ -1,5 +1,6 @@
 import { ACTOR_TYPES, isApMediaType } from '../constants.js'
 import { FedifoxError } from '../errors.js'
+import { hostOf, originOf } from '../url.js'
 
 export function parseLinkHeader (value) {
   if (!value) return []
@@ -26,8 +27,7 @@ export function headerCandidates (value, baseUrl) {
 }
 
 const list = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]).map((x) => (typeof x === 'string' ? x : x?.id)).filter(Boolean)
-const hostOf = (url) => { try { return new URL(url).host } catch { return null } }
-const handleOf = (obj) => (obj?.preferredUsername && hostOf(obj.id)) ? `${obj.preferredUsername}@${hostOf(obj.id)}` : undefined
+const handleOf = (obj) => (obj?.preferredUsername && originOf(obj.id)) ? `${obj.preferredUsername}@${hostOf(obj.id)}` : undefined
 
 function author (attributedTo) {
   const first = Array.isArray(attributedTo) ? attributedTo[0] : attributedTo
@@ -75,6 +75,8 @@ export async function resolveAuthor (resource, { client, account }) {
   if (!a || (a.name && a.handle)) return resource
   try {
     const actor = await client.fetchObject(a.id, { account })
+    // Only the origin that owns the id may describe the author (name, handle).
+    if (originOf(actor?.id) !== originOf(a.id)) return resource
     const filled = { ...a }
     if (actor.name || actor.preferredUsername) filled.name = actor.name || actor.preferredUsername
     const handle = handleOf(actor)
@@ -85,10 +87,24 @@ export async function resolveAuthor (resource, { client, account }) {
   }
 }
 
+// Id authority: a document is only trusted for ids on the origin it was
+// fetched from. When a candidate claims an id elsewhere, the id itself is
+// fetched (directly, without account or proxy) and that document is used;
+// if it in turn claims a third origin the candidate is rejected.
+async function fetchAuthoritative (client, url, account) {
+  const json = await client.fetchObject(url, { account })
+  if (typeof json?.id !== 'string' || originOf(json.id) === originOf(url)) return json
+  const authoritative = await client.fetchObject(json.id)
+  if (originOf(authoritative?.id) !== originOf(json.id)) {
+    throw new FedifoxError(`${hostOf(json.id)} serves an object with a foreign id`, { step: 'discover', detail: `${json.id} -> ${authoritative?.id}` })
+  }
+  return authoritative
+}
+
 export function createResolver ({ client, store, now = () => Date.now() }) {
   async function tryCandidate (url, pageUrl, account, { actorsOnly = false } = {}) {
     try {
-      const json = await client.fetchObject(url, { account })
+      const json = await fetchAuthoritative(client, url, account)
       const resource = classify(json, pageUrl)
       if (actorsOnly && resource.kind !== 'actor') return null
       return resource
@@ -107,7 +123,9 @@ export function createResolver ({ client, store, now = () => Date.now() }) {
       resource = await tryCandidate(url, pageUrl, account)
       if (resource) break
     }
-    if (!resource) resource = await tryCandidate(pageUrl, pageUrl, account)
+    // The page URL is never sent to the proxy and never gets a bearer:
+    // a plain conneg GET is all the fallback needs.
+    if (!resource) resource = await tryCandidate(pageUrl, pageUrl, undefined)
     if (!resource) {
       for (const url of actorCandidates) {
         resource = await tryCandidate(url, pageUrl, account, { actorsOnly: true })

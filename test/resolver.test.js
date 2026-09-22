@@ -82,3 +82,70 @@ test('resolver: rel=me only accepted when it is an actor; null cached otherwise'
   const none = await resolver.resolve({ pageUrl: 'https://y.test/other', headerLinks: [] })
   assert.equal(none, null)
 })
+
+test('resolver: the page URL itself is fetched directly and unauthenticated, never via the proxy', async () => {
+  const stub = createFetchStub({
+    'GET https://y.test/page': { body: { id: 'https://y.test/page', type: 'Article', attributedTo: { id: bob.id, name: 'Bob', preferredUsername: 'bob' } } }
+  })
+  const client = createClient({ fetch: stub.fetch })
+  const store = createStore(createStorageArea())
+  const resolver = createResolver({ client, store, now: () => 1 })
+  const account = { actorId: 'https://x.test/a', accessToken: 'tok', proxyUrl: 'https://x.test/proxy' }
+  const resource = await resolver.resolve({ pageUrl: 'https://y.test/page', objectCandidates: [], headerLinks: [], account })
+  assert.equal(resource.type, 'Article')
+  assert.deepEqual(stub.calls.map((c) => `${c.method} ${c.url}`), ['GET https://y.test/page'])
+  assert.equal(stub.calls[0].headers.get('authorization'), null)
+})
+
+test('resolver: explicit candidates still go through the proxy when the account has one', async () => {
+  const stub = createFetchStub({
+    'POST https://x.test/proxy': ({ body }) => ({ body: String(body).includes('posts%2F1') ? note : bob })
+  })
+  const client = createClient({ fetch: stub.fetch })
+  const store = createStore(createStorageArea())
+  const resolver = createResolver({ client, store, now: () => 1 })
+  const account = { actorId: 'https://x.test/a', accessToken: 'tok', proxyUrl: 'https://x.test/proxy' }
+  const resource = await resolver.resolve({ pageUrl: 'https://y.test/page', objectCandidates: ['https://y.test/posts/1'], headerLinks: [], account })
+  assert.equal(resource.id, note.id)
+  assert.ok(stub.calls.every((c) => c.method === 'POST' && c.url === 'https://x.test/proxy'))
+})
+
+test('resolver: a document claiming a foreign id is re-fetched from that id, unauthenticated', async () => {
+  const stub = createFetchStub({
+    'GET https://evil.test/x': { body: { ...note, content: 'spoofed' } },
+    'GET https://y.test/posts/1': { body: { ...note, name: 'Real' } },
+    'GET https://y.test/users/bob': { body: bob }
+  })
+  const client = createClient({ fetch: stub.fetch })
+  const store = createStore(createStorageArea())
+  const resolver = createResolver({ client, store, now: () => 1 })
+  const account = { actorId: 'https://x.test/a', accessToken: 'tok' }
+  const resource = await resolver.resolve({ pageUrl: 'https://evil.test/page', objectCandidates: ['https://evil.test/x'], headerLinks: [], account })
+  assert.equal(resource.id, note.id)
+  assert.equal(resource.name, 'Real')
+  const refetch = stub.calls.find((c) => c.url === 'https://y.test/posts/1')
+  assert.ok(refetch)
+  assert.equal(refetch.headers.get('authorization'), null)
+})
+
+test('resolver: candidate is skipped when the authoritative re-fetch fails or still lies about its id', async () => {
+  const stub = createFetchStub({
+    'GET https://evil.test/x': { body: { id: 'https://y.test/posts/1', type: 'Note' } },
+    'GET https://y.test/posts/1': { status: 404, body: '' },
+    'GET https://evil.test/y': { body: { id: 'https://y.test/posts/2', type: 'Note' } },
+    'GET https://y.test/posts/2': { body: { id: 'https://z.test/posts/2', type: 'Note' } },
+    'GET https://evil.test/page': { status: 200, body: '<html>', headers: { 'content-type': 'text/html' } }
+  })
+  const client = createClient({ fetch: stub.fetch })
+  const store = createStore(createStorageArea())
+  const resolver = createResolver({ client, store, now: () => 1 })
+  const resource = await resolver.resolve({ pageUrl: 'https://evil.test/page', objectCandidates: ['https://evil.test/x', 'https://evil.test/y'], headerLinks: [] })
+  assert.equal(resource, null)
+})
+
+test('resolveAuthor ignores an actor document whose id is on another origin', async () => {
+  const { fetch } = createFetchStub({ 'GET https://evil.test/bob': { body: { ...bob, id: 'https://y.test/users/bob' } } })
+  const client = createClient({ fetch })
+  const resource = await resolveAuthor({ ...classify(note, 'p'), attributedTo: { id: 'https://evil.test/bob' } }, { client })
+  assert.deepEqual(resource.attributedTo, { id: 'https://evil.test/bob' })
+})

@@ -5,13 +5,36 @@ import { createFetchStub } from './helpers/fetch-stub.js'
 
 const account = { actorId: 'https://x.test/a', outbox: 'https://x.test/a/outbox', liked: 'https://x.test/a/liked', accessToken: 'tok' }
 
-test('fetchObject uses GET + Accept without proxy, bearer when account given', async () => {
+test('fetchObject uses GET + Accept without proxy, no bearer for a foreign origin', async () => {
   const { fetch, calls } = createFetchStub({ 'GET https://y.test/o': { body: { id: 'https://y.test/o', type: 'Note' } } })
-  const client = createClient({ fetch })
+  let tokenReads = 0
+  const client = createClient({ fetch, getAccessToken: async () => { tokenReads++; return 'tok' } })
   const obj = await client.fetchObject('https://y.test/o', { account })
   assert.equal(obj.type, 'Note')
   assert.match(calls[0].headers.get('accept'), /activity\+json/)
+  assert.equal(calls[0].headers.get('authorization'), null)
+  assert.equal(tokenReads, 0)
+})
+
+test('bearer goes to own-origin URLs (collection walk), the outbox and the proxy only', async () => {
+  const { fetch, calls } = createFetchStub({
+    'GET https://x.test/a/liked': { body: { type: 'OrderedCollection', first: 'https://x.test/a/liked?page=1' } },
+    'GET https://x.test/a/liked?page=1': { body: { orderedItems: ['https://y.test/1'] } },
+    'GET https://x.test.evil.test/o': { body: { id: 'https://x.test.evil.test/o', type: 'Note' } },
+    'GET http://x.test/o': { body: { id: 'http://x.test/o', type: 'Note' } },
+    'POST https://cdn.test/proxy': { body: { id: 'https://y.test/o', type: 'Note' } }
+  })
+  const client = createClient({ fetch })
+  await client.walkCollection('https://x.test/a/liked', { account })
   assert.equal(calls[0].headers.get('authorization'), 'Bearer tok')
+  assert.equal(calls[1].headers.get('authorization'), 'Bearer tok')
+  await client.fetchObject('https://x.test.evil.test/o', { account })
+  assert.equal(calls[2].headers.get('authorization'), null)
+  await client.fetchObject('http://x.test/o', { account })
+  assert.equal(calls[3].headers.get('authorization'), null, 'scheme is part of the origin')
+  await client.fetchObject('https://y.test/o', { account: { ...account, proxyUrl: 'https://cdn.test/proxy' } })
+  assert.equal(calls[4].url, 'https://cdn.test/proxy')
+  assert.equal(calls[4].headers.get('authorization'), 'Bearer tok')
 })
 
 test('fetchObject goes through proxyUrl when the account has one', async () => {
