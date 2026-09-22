@@ -161,7 +161,7 @@ Classification: `type ∈ {Person, Group, Organization, Service, Application}`
 actions, with `handle` derived from `preferredUsername@host` when no
 WebFinger reverse lookup is attempted.
 
-Results are cached per page URL (10 min, pruned on write) and per tab; the
+Results are cached per page URL (10 min, pruned on write; a fresh page load always re-resolves — the cache only restores state after the event page was suspended) and per tab; the
 toolbar symbol turns coloured and a page action appears in the address bar (theme-tinted symbol, no page action otherwise) when a resource exists for the active tab and is
 cleared on navigation. The per-tab map lives in the event page's memory,
 which Firefox drops after ~30 s idle: every read falls back to the per-URL
