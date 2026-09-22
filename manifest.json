@@ -3,23 +3,59 @@
   "name": "fedifox",
   "version": "0.1.0",
   "description": "Like, share, follow and reply to the ActivityPub object behind any web page from your own fediverse account.",
+  "icons": {
+    "48": "icons/fediverse-color.svg",
+    "96": "icons/fediverse-color.svg",
+    "128": "icons/fediverse-color.svg"
+  },
   "browser_specific_settings": {
-    "gecko": { "id": "fedifox@pfefferle.org", "strict_min_version": "128.0" }
+    "gecko": {
+      "id": "fedifox@pfefferle.org",
+      "strict_min_version": "128.0"
+    }
   },
   "action": {
     "default_title": "fedifox",
+    "default_icon": "icons/fediverse-mono.svg",
     "default_popup": "src/popup/popup.html"
   },
   "background": {
-    "scripts": ["src/background.js"],
+    "scripts": [
+      "src/background.js"
+    ],
     "type": "module"
   },
   "content_scripts": [
-    { "matches": ["<all_urls>"], "js": ["src/content.js"], "run_at": "document_idle" }
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "identity",
+    "contextMenus",
+    "webRequest",
+    "activeTab",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "web_accessible_resources": [
-    { "resources": ["src/discovery/html.js", "src/constants.js"], "matches": ["<all_urls>"] }
-  ],
-  "permissions": ["storage", "identity", "contextMenus", "webRequest", "activeTab", "clipboardWrite"],
-  "host_permissions": ["<all_urls>"]
+    {
+      "resources": [
+        "src/discovery/html.js",
+        "src/constants.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
 }

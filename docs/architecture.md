@@ -23,7 +23,7 @@ background (MV3 event page, type: module)
   client/activities.js    pure builders: like/announce/follow/undo/create-note
   state/storage.js        storage.local wrapper (accounts, client creds,
                           action cache, discovery cache)
-  actions.js              orchestration of user actions; badge; context menu
+  actions.js              orchestration of user actions; toolbar icon state; context menu
         │ runtime.sendMessage
         ▼
 popup
@@ -162,7 +162,7 @@ actions, with `handle` derived from `preferredUsername@host` when no
 WebFinger reverse lookup is attempted.
 
 Results are cached per page URL (10 min, pruned on write) and per tab; the
-toolbar badge shows `AP` when a resource exists for the active tab and is
+toolbar icon switches to the coloured Fediverse pentagon (grey, theme-tinted otherwise) when a resource exists for the active tab and is
 cleared on navigation. The per-tab map lives in the event page's memory,
 which Firefox drops after ~30 s idle: every read falls back to the per-URL
 cache via `tabs.get(tabId).url`, and failing that asks the content script to
@@ -246,7 +246,7 @@ Numbers refer to issues in the SWF repo.
 | `src/actions.js` | `createActions()` — state checks and user actions with ActionRecords |
 | `src/messages.js` | `createRouter()` — message router wiring background state to popup/content requests |
 | `src/content.js` | DOM → `page:discovered` message |
-| `src/background.js` | wiring: message router, webRequest header capture, badge, context menus |
+| `src/background.js` | wiring: message router, webRequest header capture, icon state, context menus |
 | `src/popup/popup.html`, `popup.js`, `popup.css`, `render.js` | UI |
 | `test/helpers/fetch-stub.js`, `test/helpers/storage-stub.js` | test doubles |
 | `test/*.test.js` | one per module |

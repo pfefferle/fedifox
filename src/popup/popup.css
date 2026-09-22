@@ -2,6 +2,7 @@
 body { width: 320px; margin: 0; padding: 12px; display: grid; gap: 12px; }
 header { display: flex; align-items: center; gap: 8px; }
 header strong { flex: 1; }
+header .logo { width: 20px; height: 20px; }
 label { display: grid; gap: 4px; margin-bottom: 8px; }
 input, textarea, select { width: 100%; box-sizing: border-box; padding: 6px; }
 button { padding: 6px 10px; cursor: pointer; }

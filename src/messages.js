@@ -1,6 +1,9 @@
 import { describeError, FedifoxError } from './errors.js'
 import { headerCandidates } from './discovery/resolver.js'
 
+export const ICON_FOUND = 'icons/fediverse-color.svg'
+export const ICON_NONE = 'icons/fediverse-mono.svg'
+
 export function createRouter ({ store, session, resolver, actions, browser, now = () => Date.now() }) {
   // Per-tab state lives in memory only; Firefox suspends the event page after
   // ~30 s idle and restarts it with empty maps, so every read falls back to
@@ -13,10 +16,11 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
   const generation = (tabId) => tabGeneration.get(tabId) || 0
   const bumpGeneration = (tabId) => tabGeneration.set(tabId, generation(tabId) + 1)
 
-  async function setBadge (tabId, resource) {
+  // The toolbar icon is the indicator: the coloured pentagon means the page
+  // has an ActivityPub object, the theme-tinted one means it does not.
+  async function setIcon (tabId, resource) {
     try {
-      await browser.action.setBadgeBackgroundColor({ color: '#6364ff', tabId })
-      await browser.action.setBadgeText({ text: resource ? 'AP' : '', tabId })
+      await browser.action.setIcon({ tabId, path: resource ? ICON_FOUND : ICON_NONE })
     } catch { /* tab may be gone */ }
   }
 
@@ -82,7 +86,7 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
       console.debug('fedifox: discovered', msg.url, resource ? `${resource.kind} ${resource.id}` : 'nothing', { tabId, stale: generation(tabId) !== gen })
       if (tabId != null && generation(tabId) === gen) {
         tabResources.set(tabId, resource)
-        await setBadge(tabId, resource)
+        await setIcon(tabId, resource)
       }
       return { ok: true }
     },

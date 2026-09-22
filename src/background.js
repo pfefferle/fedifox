@@ -4,7 +4,7 @@ import { createClient } from './client/activitypub.js'
 import { createSession } from './auth/session.js'
 import { createResolver } from './discovery/resolver.js'
 import { createActions } from './actions.js'
-import { createRouter } from './messages.js'
+import { createRouter, ICON_NONE } from './messages.js'
 
 const store = createStore(browser.storage.local)
 // The session uses a plain client (login has no token yet); everything else
@@ -32,7 +32,7 @@ browser.tabs.onUpdated.addListener((tabId, info) => {
     // so only the tab's resolved resource is cleared here — the Link header
     // captured by onHeadersReceived (which fires in between) must survive.
     router.clearResource(tabId)
-    browser.action.setBadgeText({ text: '', tabId }).catch(() => {})
+    browser.action.setIcon({ tabId, path: ICON_NONE }).catch(() => {})
   }
 })
 

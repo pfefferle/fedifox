@@ -8,12 +8,12 @@ const account = { actorId: 'https://x.test/a', handle: 'a@x.test', outbox: 'http
 const note = { id: 'https://y.test/posts/1', kind: 'object', type: 'Note', url: 'https://y.test/@bob/1', attributedTo: { id: 'https://y.test/users/bob', handle: 'bob@y.test' }, audience: { to: [], cc: [] } }
 
 function makeBrowser ({ tabs = {} } = {}) {
-  const badges = []
+  const icons = []
   const sent = []
   return {
-    badges,
+    icons,
     sent,
-    action: { setBadgeText: async (o) => badges.push(o), setBadgeBackgroundColor: async () => {} },
+    action: { setIcon: async (o) => icons.push(o) },
     tabs: {
       async get (tabId) { if (!tabs[tabId]) throw new Error(`Invalid tab ID: ${tabId}`); return { id: tabId, ...tabs[tabId] } },
       async sendMessage (tabId, msg) { sent.push([tabId, msg]); if (!tabs[tabId]) throw new Error('Could not establish connection') }
@@ -42,12 +42,12 @@ function setup ({ resource = note, store = createStore(createStorageArea()), bro
   return { router, store, browser, calls }
 }
 
-test('page:discovered resolves, caches per tab and sets badge', async () => {
+test('page:discovered resolves, caches per tab and switches the icon', async () => {
   const { router, browser, calls } = setup()
   const res = await router.handle({ type: 'page:discovered', url: 'https://y.test/page', objectCandidates: ['https://y.test/posts/1'], actorCandidates: [] }, { tab: { id: 7 } })
   assert.deepEqual(res, { ok: true })
   assert.equal(calls[0][1].pageUrl, 'https://y.test/page')
-  assert.deepEqual(browser.badges.at(-1), { text: 'AP', tabId: 7 })
+  assert.deepEqual(browser.icons.at(-1), { tabId: 7, path: 'icons/fediverse-color.svg' })
   assert.deepEqual(await router.handle({ type: 'tab:resource', tabId: 7 }), { resource: note })
   assert.deepEqual(await router.handle({ type: 'tab:resource', tabId: 8 }), { resource: null })
 })
@@ -109,7 +109,7 @@ test('a page:discovered that resolves after the tab navigated away does not resu
   const res = await router.handle({ type: 'page:discovered', url: 'https://y.test/page', objectCandidates: [], actorCandidates: [] }, { tab: { id: 7 } })
   assert.deepEqual(res, { ok: true })
   assert.deepEqual(await router.handle({ type: 'tab:resource', tabId: 7 }), { resource: null })
-  assert.ok(!browser.badges.some((b) => b.tabId === 7 && b.text === 'AP'))
+  assert.ok(!browser.icons.some((i) => i.tabId === 7 && i.path === 'icons/fediverse-color.svg'))
 })
 
 test('after an event-page restart the resource is restored from the discovery cache', async () => {

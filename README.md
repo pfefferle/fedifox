@@ -50,3 +50,9 @@ which isn't known outside of a running instance. To publish for real:
 
 Until `CIMD_URL` is set, fedifox falls back to RFC 7591 dynamic client
 registration, then to a manually entered client ID.
+
+## Logo
+
+The toolbar and add-on icons are the [Fediverse logo](https://commons.wikimedia.org/wiki/File:Fediverse_logo_proposal.svg)
+by Eukombos (CC0 / public domain): grey while a page has no ActivityPub
+object, coloured when it does.
