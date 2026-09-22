@@ -1,6 +1,6 @@
 # Manual test checklist
 
-Prerequisites: `npm start` in this repo; a WordPress site with the ActivityPub
+Prerequisites: `npm start` in this repo (temporary profile; use `npm run start:persist` to keep logins between runs); a WordPress site with the ActivityPub
 plugin (`cd ../wordpress-activitypub && wp-env start`, user `admin`, actor
 `admin@localhost:8888` — add `allowInsecure: true` to the `createSession({...})`
 call in `src/background.js` while testing over http).
