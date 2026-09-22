@@ -45,3 +45,15 @@ test('discovery cache expires after TTL', async () => {
   await store.saveDiscovery('https://y.test/none', null, 1000)
   assert.equal(await store.getDiscovery('https://y.test/none', 1000), null)
 })
+
+test('saveDiscovery prunes entries older than the TTL', async () => {
+  const area = createStorageArea()
+  const store = createStore(area)
+  const resource = { id: 'https://y.test/o', kind: 'object', type: 'Note', url: 'https://y.test/o' }
+  await store.saveDiscovery('https://y.test/old', resource, 1000)
+  await store.saveDiscovery('https://y.test/new', null, 1000 + 11 * 60_000)
+  const { discoveryCache } = await area.get('discoveryCache')
+  assert.deepEqual(Object.keys(discoveryCache), ['https://y.test/new'])
+  await store.saveDiscovery('https://y.test/newer', resource, 1000 + 12 * 60_000)
+  assert.deepEqual(Object.keys((await area.get('discoveryCache')).discoveryCache), ['https://y.test/new', 'https://y.test/newer'])
+})

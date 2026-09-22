@@ -58,7 +58,11 @@ export function createStore (area) {
       return entry.resource
     },
     async saveDiscovery (url, resource, now) {
-      const discoveryCache = await read('discoveryCache', {})
+      // Prune on write so the cache never outgrows one TTL window of browsing.
+      const discoveryCache = {}
+      for (const [key, entry] of Object.entries(await read('discoveryCache', {}))) {
+        if (entry && now - entry.at <= DISCOVERY_TTL_MS) discoveryCache[key] = entry
+      }
       discoveryCache[url] = { resource, at: now }
       await area.set({ discoveryCache })
     }
