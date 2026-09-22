@@ -9,17 +9,20 @@ async function discover () {
     href: el.getAttribute('href')
   }))
   const { objectCandidates, actorCandidates } = extractCandidates(links, document.baseURI)
+  console.debug('fedifox: candidates', { objectCandidates, actorCandidates })
   try {
-    await browser.runtime.sendMessage({ type: 'page:discovered', url: location.href, objectCandidates, actorCandidates })
-  } catch {
+    const res = await browser.runtime.sendMessage({ type: 'page:discovered', url: location.href, objectCandidates, actorCandidates })
+    console.debug('fedifox: background answered', res)
+  } catch (e) {
     // background not ready or page is privileged
+    console.debug('fedifox: could not reach background', e?.message)
   }
 }
 
 // The background loses its per-tab state when Firefox suspends the event
 // page; it then asks for discovery to be run again.
 browser.runtime.onMessage.addListener((message) => {
-  if (message?.type === 'page:rediscover') discover().catch(() => {})
+  if (message?.type === 'page:rediscover') discover().catch((e) => console.warn('fedifox: discovery failed', e))
 })
 
-discover().catch(() => {})
+discover().catch((e) => console.warn('fedifox: discovery failed', e))

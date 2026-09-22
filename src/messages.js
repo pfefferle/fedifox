@@ -79,6 +79,7 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
         headerLinks: tabHeaderLinks.get(tabId) || [],
         account
       })
+      console.debug('fedifox: discovered', msg.url, resource ? `${resource.kind} ${resource.id}` : 'nothing', { tabId, stale: generation(tabId) !== gen })
       if (tabId != null && generation(tabId) === gen) {
         tabResources.set(tabId, resource)
         await setBadge(tabId, resource)
@@ -112,6 +113,7 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
         if (!handler) throw new FedifoxError(`Unknown message type ${message?.type}`, { step: 'router' })
         return await handler(message, sender)
       } catch (e) {
+        console.warn('fedifox:', message?.type, describeError(e))
         return { error: describeError(e) }
       }
     },
