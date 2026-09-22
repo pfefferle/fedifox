@@ -1,6 +1,6 @@
 {
   "client_id": "https://pfefferle.github.io/fedifox/client.json",
-  "client_name": "fedifox",
+  "client_name": "FediFox",
   "client_uri": "https://github.com/pfefferle/fedifox",
   "redirect_uris": ["REPLACE_WITH_browser.identity.getRedirectURL()"],
   "grant_types": ["authorization_code", "refresh_token"],

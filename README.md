@@ -1,4 +1,4 @@
-# fedifox
+# FediFox
 
 Firefox add-on (Manifest V3) that lets you like, share, follow, reply to and mention the
 ActivityPub object or actor behind the page you are looking at — from your

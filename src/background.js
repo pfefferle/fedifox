@@ -67,8 +67,8 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
   const res = await router.handle({ type: 'action:run', tabId: tab.id, name: item.name })
   if (res.error) {
     console.warn('fedifox:', res.error.message, res.error)
-    await browser.action.setTitle({ tabId: tab.id, title: `fedifox — ${res.error.message}` }).catch(() => {})
+    await browser.action.setTitle({ tabId: tab.id, title: `FediFox — ${res.error.message}` }).catch(() => {})
   } else {
-    await browser.action.setTitle({ tabId: tab.id, title: 'fedifox' }).catch(() => {})
+    await browser.action.setTitle({ tabId: tab.id, title: 'FediFox' }).catch(() => {})
   }
 })

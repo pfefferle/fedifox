@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "fedifox",
+  "name": "FediFox",
   "version": "0.1.0",
   "description": "Like, share, follow and reply to the ActivityPub object behind any web page from your own fediverse account.",
   "icons": {
@@ -15,13 +15,13 @@
     }
   },
   "action": {
-    "default_title": "fedifox",
+    "default_title": "FediFox",
     "default_icon": "icons/symbol.svg",
     "default_popup": "src/popup/popup.html"
   },
   "page_action": {
     "default_icon": "icons/symbol-color.svg",
-    "default_title": "fedifox \u2014 this page is on the fediverse",
+    "default_title": "FediFox \u2014 this page is on the fediverse",
     "default_popup": "src/popup/popup.html"
   },
   "background": {

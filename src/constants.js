@@ -8,7 +8,7 @@ export const ACTOR_TYPES = ['Person', 'Group', 'Organization', 'Service', 'Appli
 export const OAUTH_SCOPE = 'read write'
 // Set to the published client.json URL once it is hosted; null disables CIMD.
 export const CIMD_URL = null
-export const CLIENT_NAME = 'fedifox'
+export const CLIENT_NAME = 'FediFox'
 export const CLIENT_URI = 'https://github.com/pfefferle/fedifox'
 export const SOFTWARE_ID = '7f3c2b1e-6d4a-4f8e-9b0c-fedif0x00001'
 export const SOFTWARE_VERSION = '0.1.0'
