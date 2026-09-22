@@ -162,7 +162,7 @@ actions, with `handle` derived from `preferredUsername@host` when no
 WebFinger reverse lookup is attempted.
 
 Results are cached per page URL (10 min, pruned on write) and per tab; the
-toolbar icon switches to the coloured Fediverse pentagon (grey, theme-tinted otherwise) when a resource exists for the active tab and is
+toolbar symbol turns coloured and a page action appears in the address bar (theme-tinted symbol, no page action otherwise) when a resource exists for the active tab and is
 cleared on navigation. The per-tab map lives in the event page's memory,
 which Firefox drops after ~30 s idle: every read falls back to the per-URL
 cache via `tabs.get(tabId).url`, and failing that asks the content script to

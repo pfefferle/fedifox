@@ -1,8 +1,8 @@
 import { describeError, FedifoxError } from './errors.js'
 import { headerCandidates } from './discovery/resolver.js'
 
-export const ICON_FOUND = 'icons/fediverse-color.svg'
-export const ICON_NONE = 'icons/fediverse-mono.svg'
+export const ICON_FOUND = 'icons/symbol-color.svg'
+export const ICON_NONE = 'icons/symbol.svg'
 
 export function createRouter ({ store, session, resolver, actions, browser, now = () => Date.now() }) {
   // Per-tab state lives in memory only; Firefox suspends the event page after
@@ -16,11 +16,13 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
   const generation = (tabId) => tabGeneration.get(tabId) || 0
   const bumpGeneration = (tabId) => tabGeneration.set(tabId, generation(tabId) + 1)
 
-  // The toolbar icon is the indicator: the coloured pentagon means the page
-  // has an ActivityPub object, the theme-tinted one means it does not.
+  // Two indicators: the toolbar symbol turns coloured, and a page action
+  // appears in the address bar, when the page has an ActivityPub object.
   async function setIcon (tabId, resource) {
     try {
       await browser.action.setIcon({ tabId, path: resource ? ICON_FOUND : ICON_NONE })
+      if (resource) await browser.pageAction?.show(tabId)
+      else await browser.pageAction?.hide(tabId)
     } catch { /* tab may be gone */ }
   }
 

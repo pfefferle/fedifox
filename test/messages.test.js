@@ -13,7 +13,7 @@ function makeBrowser ({ tabs = {} } = {}) {
   return {
     icons,
     sent,
-    action: { setIcon: async (o) => icons.push(o) },
+    action: { setIcon: async (o) => icons.push(o) }, pageAction: { show: async (tabId) => icons.push({ tabId, shown: true }), hide: async (tabId) => icons.push({ tabId, shown: false }) },
     tabs: {
       async get (tabId) { if (!tabs[tabId]) throw new Error(`Invalid tab ID: ${tabId}`); return { id: tabId, ...tabs[tabId] } },
       async sendMessage (tabId, msg) { sent.push([tabId, msg]); if (!tabs[tabId]) throw new Error('Could not establish connection') }
@@ -47,7 +47,8 @@ test('page:discovered resolves, caches per tab and switches the icon', async () 
   const res = await router.handle({ type: 'page:discovered', url: 'https://y.test/page', objectCandidates: ['https://y.test/posts/1'], actorCandidates: [] }, { tab: { id: 7 } })
   assert.deepEqual(res, { ok: true })
   assert.equal(calls[0][1].pageUrl, 'https://y.test/page')
-  assert.deepEqual(browser.icons.at(-1), { tabId: 7, path: 'icons/fediverse-color.svg' })
+  assert.deepEqual(browser.icons.at(-2), { tabId: 7, path: 'icons/symbol-color.svg' })
+  assert.deepEqual(browser.icons.at(-1), { tabId: 7, shown: true })
   assert.deepEqual(await router.handle({ type: 'tab:resource', tabId: 7 }), { resource: note })
   assert.deepEqual(await router.handle({ type: 'tab:resource', tabId: 8 }), { resource: null })
 })
@@ -109,7 +110,7 @@ test('a page:discovered that resolves after the tab navigated away does not resu
   const res = await router.handle({ type: 'page:discovered', url: 'https://y.test/page', objectCandidates: [], actorCandidates: [] }, { tab: { id: 7 } })
   assert.deepEqual(res, { ok: true })
   assert.deepEqual(await router.handle({ type: 'tab:resource', tabId: 7 }), { resource: null })
-  assert.ok(!browser.icons.some((i) => i.tabId === 7 && i.path === 'icons/fediverse-color.svg'))
+  assert.ok(!browser.icons.some((i) => i.tabId === 7 && (i.path === 'icons/symbol-color.svg' || i.shown === true)))
 })
 
 test('after an event-page restart the resource is restored from the discovery cache', async () => {

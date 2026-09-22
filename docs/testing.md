@@ -13,7 +13,7 @@ call in `src/background.js` while testing over http).
 - [ ] Log out → account gone; log in again → no new client registration (check `storage.local.clientCreds`).
 
 ## Discovery
-- [ ] Open a WP post → toolbar icon turns into the coloured pentagon, card shows type + author.
+- [ ] Open a WP post → toolbar symbol turns coloured and the symbol appears in the address bar; card shows type + author.
 - [ ] Open a WP author page → card shows actor with Follow/Mention.
 - [ ] Open a Mastodon status page → discovered via `<link rel="alternate">`.
 - [ ] Open a page with only a `Link` header (curl -I to confirm) → discovered.

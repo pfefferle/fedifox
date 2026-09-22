@@ -53,6 +53,7 @@ registration, then to a manually entered client ID.
 
 ## Logo
 
-The toolbar and add-on icons are the [Fediverse logo](https://commons.wikimedia.org/wiki/File:Fediverse_logo_proposal.svg)
-by Eukombos (CC0 / public domain): grey while a page has no ActivityPub
-object, coloured when it does.
+The icons are the Fediverse symbol ⁂ (three asterisks, U+2042), taken from
+the WordPress ActivityPub plugin's SVG. The toolbar symbol is theme-tinted
+while a page has no ActivityPub object and coloured when it does; on such
+pages the symbol also appears in the address bar.

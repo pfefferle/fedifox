@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "description": "Like, share, follow and reply to the ActivityPub object behind any web page from your own fediverse account.",
   "icons": {
-    "48": "icons/fediverse-color.svg",
-    "96": "icons/fediverse-color.svg",
-    "128": "icons/fediverse-color.svg"
+    "48": "icons/symbol-color.svg",
+    "96": "icons/symbol-color.svg",
+    "128": "icons/symbol-color.svg"
   },
   "browser_specific_settings": {
     "gecko": {
@@ -16,7 +16,12 @@
   },
   "action": {
     "default_title": "fedifox",
-    "default_icon": "icons/fediverse-mono.svg",
+    "default_icon": "icons/symbol.svg",
+    "default_popup": "src/popup/popup.html"
+  },
+  "page_action": {
+    "default_icon": "icons/symbol-color.svg",
+    "default_title": "fedifox \u2014 this page is on the fediverse",
     "default_popup": "src/popup/popup.html"
   },
   "background": {

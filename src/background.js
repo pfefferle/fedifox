@@ -33,6 +33,7 @@ browser.tabs.onUpdated.addListener((tabId, info) => {
     // captured by onHeadersReceived (which fires in between) must survive.
     router.clearResource(tabId)
     browser.action.setIcon({ tabId, path: ICON_NONE }).catch(() => {})
+    browser.pageAction?.hide(tabId)
   }
 })
 
