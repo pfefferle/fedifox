@@ -15,7 +15,7 @@ background (MV3 event page, type: module)
                           (webRequest.onHeadersReceived), conneg fallback;
                           fetches + classifies the resource; caches per tab
   auth/discovery.js       OAuth endpoint discovery precedence
-  auth/client-identity.js CIMD → RFC 7591 → manual
+  auth/client-identity.js cached → manual → CIMD → RFC 7591
   auth/session.js         PKCE flow via identity.launchWebAuthFlow, refresh,
                           revoke
   client/activitypub.js   outbox POST, collection paging, proxy fetch,
@@ -40,11 +40,14 @@ the background is the only holder of state.
 
 - `page:discovered` (content → bg): `{url, objectCandidates[], actorCandidates[]}`
 - `tab:resource` (popup → bg): returns the cached `Resource` for the active tab
-- `auth:login` `{handle | actorUrl, clientId?, clientSecret?}` → `Account`
+- `auth:login` `{input, manual?: {clientId, clientSecret?}}` → `Account`
+  (`input` is a handle or actor URL)
 - `auth:logout` `{actorId}`
 - `accounts:list`, `accounts:select` `{actorId}`
-- `action:like|undoLike|share|undoShare|follow|undoFollow|reply|mention` → result
-- `action:state` `{resourceId}` → `{liked, shared, following, followingAuthor}`
+- `action:run` `{tabId, name, text?}` → `{activityId, state}`, where
+  `name ∈ like|undoLike|share|undoShare|follow|undoFollow|followAuthor|
+  undoFollowAuthor|reply|mention`
+- `action:state` `{tabId}` → `{liked, shared, following, followingAuthor}`
 
 ### Data model (plain objects in `storage.local`)
 
@@ -76,17 +79,23 @@ DiscoveryCache keyed by page URL: {resource, at}  (TTL 10 min)
    3. On a later `401` with `WWW-Authenticate: … resource_metadata="…"`,
       RFC 9728 → `authorization_servers[0]` → RFC 8414.
    4. Otherwise fail with "server does not advertise an OAuth endpoint".
-5. **Client identity** (`auth/client-identity.js`), cached per `asOrigin`,
-   first hit wins:
-   1. CIMD: `client_id = CIMD_URL` (constant; `null` in dev builds until the
-      document is hosted). Used only if the metadata does not explicitly say
-      otherwise; on `invalid_client` fall through.
-   2. RFC 7591 `POST registration_endpoint` with
+5. **Client identity** (`auth/client-identity.js`), cached per authorization
+   server issuer, precedence order:
+   1. Cached creds for this issuer (skipped if the login form supplied a
+      manual client ID, so re-entering "Advanced" fields always wins).
+   2. Manual `client_id` / `client_secret` from the login form's "Advanced"
+      fields.
+   3. CIMD: `client_id = CIMD_URL` (constant; `null` in dev builds until the
+      document is hosted).
+   4. RFC 7591 `POST registration_endpoint` with
       `{client_name, redirect_uris:[redirect], grant_types:
       ["authorization_code","refresh_token"], response_types:["code"],
       token_endpoint_auth_method:"none", client_uri, software_id,
       software_version}`. Store `client_id` (+ `client_secret` if issued).
-   3. Manual `client_id` / `client_secret` from the login form.
+   5. Otherwise fail: "supports neither client registration nor CIMD — enter
+      a client ID under 'Advanced'". Resolved creds are cached per issuer via
+      `store.saveClientCreds`; `forgetClientCreds` can clear them but nothing
+      currently calls it.
 6. Authorization: `browser.identity.launchWebAuthFlow({interactive: true,
    url})` with `response_type=code`, PKCE S256, random `state`,
    `scope = "read write"` (constant), `redirect_uri =
@@ -194,7 +203,7 @@ Numbers refer to issues in the SWF repo.
 | `src/client/activities.js` | pure AS2 activity builders + HTML content rendering |
 | `src/client/activitypub.js` | `createClient()` — AP fetch, proxy fetch, outbox POST, collection walk, WebFinger |
 | `src/auth/discovery.js` | OAuth endpoint discovery (actor endpoints → RFC 8414 → RFC 9728) |
-| `src/auth/client-identity.js` | CIMD → RFC 7591 → manual client credentials |
+| `src/auth/client-identity.js` | cached → manual → CIMD → RFC 7591 client credentials |
 | `src/auth/session.js` | login/refresh/logout using `oauth4webapi` + `browser.identity` |
 | `src/discovery/html.js` | pure candidate extraction from `<link>`/`<a>` data |
 | `src/discovery/resolver.js` | Link-header parsing, candidate ordering, fetch + classify → `Resource` |

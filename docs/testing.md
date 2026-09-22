@@ -2,8 +2,8 @@
 
 Prerequisites: `npm start` in this repo; a WordPress site with the ActivityPub
 plugin (`cd ../wordpress-activitypub && wp-env start`, user `admin`, actor
-`admin@localhost:8888` — set `allowInsecure: true` in `background.js` while
-testing over http).
+`admin@localhost:8888` — add `allowInsecure: true` to the `createSession({...})`
+call in `src/background.js` while testing over http).
 
 ## Login
 - [ ] Enter `admin@localhost:8888` → WordPress authorization page opens → approve → popup shows the account.
