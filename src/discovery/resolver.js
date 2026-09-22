@@ -108,7 +108,10 @@ export function createResolver ({ client, store, now = () => Date.now() }) {
       const resource = classify(json, pageUrl)
       if (actorsOnly && resource.kind !== 'actor') return null
       return resource
-    } catch {
+    } catch (e) {
+      // A failing candidate is expected (most pages are not on the fediverse);
+      // the reason still matters when debugging discovery.
+      console.debug('fedifox: candidate failed', url, e?.message, e?.detail || '')
       return null
     }
   }
