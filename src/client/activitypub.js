@@ -23,9 +23,12 @@ function itemId (item) {
 // onUnauthorized(account) → new access token or null. When set, a 401 on a
 // request that carried the bearer triggers one refresh and one retry.
 export function createClient ({ fetch = globalThis.fetch, getAccessToken = async (account) => account.accessToken, onUnauthorized = null } = {}) {
+  // Never send the user's site cookies: a page must not be able to make the
+  // extension act with the user's session, and logged-in sessions change what
+  // servers answer (Mastodon replies 406 to content negotiation with one).
   async function request (url, init, step) {
     try {
-      return await fetch(url, init)
+      return await fetch(url, { credentials: 'omit', ...init })
     } catch (cause) {
       throw new FedifoxError(`Could not reach ${hostOf(url)}`, { step, status: undefined, detail: cause?.message, cause })
     }

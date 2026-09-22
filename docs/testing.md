@@ -16,6 +16,7 @@ call in `src/background.js` while testing over http).
 - [ ] Open a WP post → toolbar symbol turns coloured and the symbol appears in the address bar; card shows type + author.
 - [ ] Open a WP author page → card shows actor with Follow/Mention.
 - [ ] Open a Mastodon status page → discovered via `<link rel="alternate">`.
+- [ ] While logged in to mastodon.social, open a remote profile there (`/@user@other.host`) → the actor is discovered (content negotiation must not carry the session cookie).
 - [ ] Open a page with only a `Link` header (curl -I to confirm) → discovered.
 - [ ] Open a non-fediverse page → "No ActivityPub object found".
 - [ ] Open a WP post, close the popup, wait 60 s (event page suspended), open the popup → card must still show.

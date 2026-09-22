@@ -14,6 +14,8 @@ test('fetchObject uses GET + Accept without proxy, no bearer for a foreign origi
   assert.match(calls[0].headers.get('accept'), /activity\+json/)
   assert.equal(calls[0].headers.get('authorization'), null)
   assert.equal(tokenReads, 0)
+  // never the user's site cookies: a logged-in Mastodon session answers 406 to conneg
+  assert.equal(calls[0].credentials, 'omit')
 })
 
 test('bearer goes to own-origin URLs (collection walk), the outbox and the proxy only', async () => {

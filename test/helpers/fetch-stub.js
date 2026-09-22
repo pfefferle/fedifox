@@ -7,7 +7,7 @@ export function createFetchStub (routes = {}) {
     const method = (init.method || 'GET').toUpperCase()
     const headers = new Headers(init.headers || {})
     const body = init.body
-    calls.push({ method, url, headers, body })
+    calls.push({ method, url, headers, body, credentials: init.credentials })
     const handler = routes[`${method} ${url}`]
     if (!handler) throw new Error(`fetch-stub: no route for ${method} ${url}`)
     const out = typeof handler === 'function' ? await handler({ method, url, headers, body }) : handler

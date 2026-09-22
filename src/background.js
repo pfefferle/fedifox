@@ -7,10 +7,14 @@ import { createActions } from './actions.js'
 import { createRouter, ICON_NONE } from './messages.js'
 
 const store = createStore(browser.storage.local)
+// No request made by the extension carries the user's site cookies — not
+// discovery, not OAuth; only bearer tokens identify the user.
+const fetchWithoutCookies = (url, init = {}) => fetch(url, { credentials: 'omit', ...init })
 // The session uses a plain client (login has no token yet); everything else
 // goes through a client that refreshes tokens transparently.
-const session = createSession({ store, client: createClient(), browser, oauth })
+const session = createSession({ store, client: createClient({ fetch: fetchWithoutCookies }), browser, oauth, fetch: fetchWithoutCookies })
 const client = createClient({
+  fetch: fetchWithoutCookies,
   getAccessToken: (account) => session.ensureFreshToken(account),
   onUnauthorized: (account) => session.forceRefresh(account)
 })
