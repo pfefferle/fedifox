@@ -21,9 +21,12 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
   async function setIcon (tabId, resource) {
     try {
       await browser.action.setIcon({ tabId, path: resource ? ICON_FOUND : ICON_NONE })
-      if (resource) await browser.pageAction?.show(tabId)
-      else await browser.pageAction?.hide(tabId)
-    } catch { /* tab may be gone */ }
+      if (!browser.pageAction) console.warn('fedifox: pageAction API unavailable')
+      else if (resource) await browser.pageAction.show(tabId)
+      else await browser.pageAction.hide(tabId)
+    } catch (e) {
+      console.warn('fedifox: could not update icons for tab', tabId, e?.message)
+    }
   }
 
   async function requireAccount () {
