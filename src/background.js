@@ -42,7 +42,7 @@ browser.runtime.onInstalled.addListener(() => {
   for (const item of MENU) browser.contextMenus.create({ id: item.id, title: item.title, contexts: ['page'], visible: false })
 })
 browser.contextMenus.onShown.addListener(async (info, tab) => {
-  const visible = Boolean(tab?.id != null && router.hasResource(tab.id))
+  const visible = Boolean(tab?.id != null && await router.hasResource(tab.id))
   for (const item of MENU) await browser.contextMenus.update(item.id, { visible })
   await browser.contextMenus.refresh()
 })

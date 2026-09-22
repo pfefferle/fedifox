@@ -7,16 +7,26 @@ import { createStorageArea } from './helpers/storage-stub.js'
 const account = { actorId: 'https://x.test/a', handle: 'a@x.test', outbox: 'https://x.test/a/outbox', liked: 'https://x.test/a/liked', following: 'https://x.test/a/following', followers: 'https://x.test/a/followers', accessToken: 't', needsReauth: false }
 const note = { id: 'https://y.test/posts/1', kind: 'object', type: 'Note', url: 'https://y.test/@bob/1', attributedTo: { id: 'https://y.test/users/bob', handle: 'bob@y.test' }, audience: { to: [], cc: [] } }
 
-function makeBrowser () {
+function makeBrowser ({ tabs = {} } = {}) {
   const badges = []
-  return { badges, action: { setBadgeText: async (o) => badges.push(o), setBadgeBackgroundColor: async () => {} } }
+  const sent = []
+  return {
+    badges,
+    sent,
+    action: { setBadgeText: async (o) => badges.push(o), setBadgeBackgroundColor: async () => {} },
+    tabs: {
+      async get (tabId) { if (!tabs[tabId]) throw new Error(`Invalid tab ID: ${tabId}`); return { id: tabId, ...tabs[tabId] } },
+      async sendMessage (tabId, msg) { sent.push([tabId, msg]); if (!tabs[tabId]) throw new Error('Could not establish connection') }
+    }
+  }
 }
 
-function setup ({ resource = note } = {}) {
-  const store = createStore(createStorageArea())
-  const browser = makeBrowser()
+const NOW = 1_000_000
+
+function setup ({ resource = note, store = createStore(createStorageArea()), browser = makeBrowser() } = {}) {
   const calls = []
-  const resolver = { async resolve (args) { calls.push(['resolve', args]); return resource } }
+  // Like the real resolver, the stub persists its result in the discovery cache.
+  const resolver = { async resolve (args) { calls.push(['resolve', args]); await store.saveDiscovery(args.pageUrl, resource, NOW); return resource } }
   const actions = {
     async state () { return { liked: false, shared: false, following: false, followingAuthor: false } },
     async like (acc, res) { calls.push(['like', acc.actorId, res.id]); return { activityId: 'https://x.test/act/1' } },
@@ -28,7 +38,7 @@ function setup ({ resource = note } = {}) {
     async login ({ input }) { calls.push(['login', input]); await store.saveAccount(account); await store.setSelectedActorId(account.actorId); return account },
     async logout (actorId) { calls.push(['logout', actorId]); await store.removeAccount(actorId) }
   }
-  const router = createRouter({ store, session, resolver, actions, browser })
+  const router = createRouter({ store, session, resolver, actions, browser, now: () => NOW })
   return { router, store, browser, calls }
 }
 
@@ -100,6 +110,42 @@ test('a page:discovered that resolves after the tab navigated away does not resu
   assert.deepEqual(res, { ok: true })
   assert.deepEqual(await router.handle({ type: 'tab:resource', tabId: 7 }), { resource: null })
   assert.ok(!browser.badges.some((b) => b.tabId === 7 && b.text === 'AP'))
+})
+
+test('after an event-page restart the resource is restored from the discovery cache', async () => {
+  const a = setup()
+  await a.router.handle({ type: 'page:discovered', url: 'https://y.test/page', objectCandidates: [], actorCandidates: [] }, { tab: { id: 7 } })
+  // Router B: same store, fresh in-memory maps, as after Firefox suspended the event page.
+  const b = setup({ store: a.store, browser: makeBrowser({ tabs: { 7: { url: 'https://y.test/page' } } }) })
+  assert.deepEqual(await b.router.handle({ type: 'tab:resource', tabId: 7 }), { resource: note })
+  assert.equal(await b.router.hasResource(7), true)
+  assert.deepEqual(b.browser.sent, [])
+  await b.store.saveAccount(account)
+  const like = await b.router.handle({ type: 'action:run', tabId: 7, name: 'like' })
+  assert.equal(like.activityId, 'https://x.test/act/1')
+  assert.deepEqual(b.calls.filter((c) => c[0] === 'resolve'), [])
+})
+
+test('with nothing cached the content script is asked to rediscover and null is returned', async () => {
+  const browser = makeBrowser({ tabs: { 7: { url: 'https://y.test/page' } } })
+  const { router, store } = setup({ browser })
+  await store.saveAccount(account)
+  assert.deepEqual(await router.handle({ type: 'tab:resource', tabId: 7 }), { resource: null })
+  assert.deepEqual(browser.sent, [[7, { type: 'page:rediscover' }]])
+  assert.equal(await router.hasResource(7), false)
+  const state = await router.handle({ type: 'action:state', tabId: 7 })
+  assert.match(state.error.message, /no activitypub object/i)
+  // A tab that no longer exists, or one whose content script is unreachable, is not an error.
+  assert.deepEqual(await router.handle({ type: 'tab:resource', tabId: 99 }), { resource: null })
+  assert.equal(await router.hasResource(99), false)
+})
+
+test('a cached "no resource" verdict is not re-discovered', async () => {
+  const browser = makeBrowser({ tabs: { 7: { url: 'https://y.test/page' } } })
+  const { router, store } = setup({ browser })
+  await store.saveDiscovery('https://y.test/page', null, NOW)
+  assert.deepEqual(await router.handle({ type: 'tab:resource', tabId: 7 }), { resource: null })
+  assert.deepEqual(browser.sent, [])
 })
 
 test('errors are returned, not thrown', async () => {

@@ -1,7 +1,11 @@
 import { describeError, FedifoxError } from './errors.js'
 import { headerCandidates } from './discovery/resolver.js'
 
-export function createRouter ({ store, session, resolver, actions, browser }) {
+export function createRouter ({ store, session, resolver, actions, browser, now = () => Date.now() }) {
+  // Per-tab state lives in memory only; Firefox suspends the event page after
+  // ~30 s idle and restarts it with empty maps, so every read falls back to
+  // the discovery cache keyed by the tab's URL, and failing that asks the
+  // content script to run discovery again.
   const tabResources = new Map()
   const tabHeaderLinks = new Map()
   const tabGeneration = new Map()
@@ -23,8 +27,23 @@ export function createRouter ({ store, session, resolver, actions, browser }) {
     return account
   }
 
-  function requireResource (tabId) {
-    const resource = tabResources.get(tabId)
+  async function resourceFor (tabId) {
+    if (tabId == null) return null
+    if (tabResources.has(tabId)) return tabResources.get(tabId)
+    let tab
+    try { tab = await browser.tabs.get(tabId) } catch { return null }
+    if (!tab?.url) return null
+    const cached = await store.getDiscovery(tab.url, now())
+    if (cached !== undefined) {
+      tabResources.set(tabId, cached)
+      return cached
+    }
+    try { await browser.tabs.sendMessage(tabId, { type: 'page:rediscover' }) } catch { /* no content script on this tab */ }
+    return null
+  }
+
+  async function requireResource (tabId) {
+    const resource = await resourceFor(tabId)
     if (!resource) throw new FedifoxError('No ActivityPub object found on this page', { step: 'discover' })
     return resource
   }
@@ -66,19 +85,19 @@ export function createRouter ({ store, session, resolver, actions, browser }) {
       }
       return { ok: true }
     },
-    async 'tab:resource' (msg) { return { resource: tabResources.get(msg.tabId) || null } },
+    async 'tab:resource' (msg) { return { resource: (await resourceFor(msg.tabId)) || null } },
     async 'accounts:list' () { return { accounts: await store.getAccounts(), selectedActorId: await store.getSelectedActorId() } },
     async 'accounts:select' (msg) { await store.setSelectedActorId(msg.actorId); return { ok: true } },
     async 'auth:login' (msg) { return { account: await session.login({ input: msg.input, manual: msg.manual }) } },
     async 'auth:logout' (msg) { await session.logout(msg.actorId); return { ok: true } },
     async 'action:state' (msg) {
       const account = await requireAccount()
-      const resource = requireResource(msg.tabId)
+      const resource = await requireResource(msg.tabId)
       return { state: await actions.state(account, resource) }
     },
     async 'action:run' (msg) {
       const account = await requireAccount()
-      const resource = requireResource(msg.tabId)
+      const resource = await requireResource(msg.tabId)
       const run = runners[msg.name]
       if (!run) throw new FedifoxError(`Unknown action ${msg.name}`, { step: 'action' })
       const { activityId } = await run(account, resource, msg.text || '')
@@ -108,6 +127,6 @@ export function createRouter ({ store, session, resolver, actions, browser }) {
       tabHeaderLinks.delete(tabId)
       bumpGeneration(tabId)
     },
-    hasResource: (tabId) => Boolean(tabResources.get(tabId))
+    hasResource: async (tabId) => Boolean(await resourceFor(tabId))
   }
 }
