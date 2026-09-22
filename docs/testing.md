@@ -18,6 +18,9 @@ call in `src/background.js` while testing over http).
 - [ ] Open a Mastodon status page → discovered via `<link rel="alternate">`.
 - [ ] Open a page with only a `Link` header (curl -I to confirm) → discovered.
 - [ ] Open a non-fediverse page → "No ActivityPub object found".
+- [ ] Open a WP post, close the popup, wait 60 s (event page suspended), open the popup → card must still show.
+- [ ] Navigate inside a Mastodon web UI (SPA, no full page load) to another status → badge and card follow the new URL.
+- [ ] With an account whose actor has `endpoints.proxyUrl`: the page URL is never `POST`ed to the proxy (check the network log); only `<link>`/header candidates are.
 
 ## Actions (each: check the WP admin / the target's collections)
 - [ ] Like → appears in `…/liked`; button turns to Unlike; Unlike → removed.
@@ -31,3 +34,5 @@ call in `src/background.js` while testing over http).
 ## Tokens
 - [ ] Set `expiresAt` to now in `storage.local` → next action refreshes silently.
 - [ ] Invalidate the refresh token server-side → popup shows "(login required)" and disables actions.
+- [ ] Stop the server, then act → "Could not reach …", account is NOT marked "(login required)"; start it again and the next action works.
+- [ ] Revoke only the access token server-side → the next action gets a 401, refreshes once and succeeds.

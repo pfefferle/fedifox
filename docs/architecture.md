@@ -39,6 +39,9 @@ All messages are `{type, ...payload}` objects over `runtime.sendMessage`;
 the background is the only holder of state.
 
 - `page:discovered` (content → bg): `{url, objectCandidates[], actorCandidates[]}`
+- `page:rediscover` (bg → content, `tabs.sendMessage`): re-run extraction and
+  send `page:discovered` again — used when the event page was restarted and
+  neither memory nor the discovery cache has the tab's resource
 - `tab:resource` (popup → bg): returns the cached `Resource` for the active tab
 - `auth:login` `{input, manual?: {clientId, clientSecret?}}` → `Account`
   (`input` is a handle or actor URL)
@@ -56,8 +59,8 @@ Account        {actorId, handle, name, inbox, outbox, liked, following, follower
                 proxyUrl?, asOrigin, accessToken, refreshToken?, expiresAt?,
                 needsReauth: bool}
 ClientCreds    keyed by asOrigin: {clientId, clientSecret?, source: 'cimd'|'dcr'|'manual'}
-Resource       {id, kind: 'actor'|'object', type, name?, summary?, url,
-                attributedTo?: {id, name, handle}, audience: {to[], cc[]}}
+Resource       {id, kind: 'actor'|'object', type, name?, summary?, handle?, url,
+                attributedTo?: {id, name?, handle?}, audience: {to[], cc[]}}
 ActionRecord   keyed by `${actorId} ${activityType} ${objectId}`: {activityId, at}
 DiscoveryCache keyed by page URL: {resource, at}  (TTL 10 min)
 ```
@@ -103,9 +106,14 @@ DiscoveryCache keyed by page URL: {resource, at}  (TTL 10 min)
    `browser_specific_settings.gecko.id` is pinned.
 7. Token exchange with `oauth4webapi` (`token_endpoint_auth_method` `none`,
    or `client_secret_post` when a secret exists). Store `Account`.
-8. Refresh: before any request, if `expiresAt` is within 60 s, refresh; on
-   `401` refresh once and retry; if refresh fails set `needsReauth` and
-   disable actions for that account in the popup.
+8. Refresh: before any request that carries the bearer, if `expiresAt` is
+   within 60 s, refresh (one in-flight refresh per account; concurrent
+   callers share it). On a `401` to a request that carried the bearer,
+   refresh once and retry once; a second `401` is surfaced as an error.
+   `needsReauth` is set — and the popup disables actions for that account
+   — only when the token endpoint answered with an OAuth error
+   (`invalid_grant` & co., HTTP 400/401); network and server failures are
+   reported as "Could not reach …" and leave the account untouched.
 9. Logout: `POST revocation_endpoint` when advertised (best effort), then
    delete the `Account`. Client creds stay cached.
 
@@ -125,16 +133,40 @@ Per top-level navigation, first result wins, in cost order:
    the body only if `Content-Type` is an AP media type and the JSON has an
    `id` and `type`.
 
-Fetching a candidate goes through the selected account's `proxyUrl`
-(`POST`, form-encoded `id=`) when present, else a direct fetch. Classification:
-`type ∈ {Person, Group, Organization, Service, Application}` → `kind: actor`;
-anything else with an `id` → `kind: object`; `attributedTo` (string or object)
-is resolved to `{id, name, handle}` for the author actions, with `handle`
-derived from `preferredUsername@host` when no WebFinger reverse lookup is
-attempted.
+Fetching an explicit candidate (HTML/header link, rel=me) goes through the
+selected account's `proxyUrl` (`POST`, form-encoded `id=`) when present, else
+a direct fetch. **The page URL itself is never proxied**: the conneg fallback
+is always a direct, unauthenticated `GET`.
 
-Results are cached per page URL (10 min) and per tab; the toolbar badge shows
-`AP` when a resource exists for the active tab and is cleared on navigation.
+**Bearer scope.** The access token is sent only to the account's `proxyUrl`,
+its `outbox`, and URLs on the actor's own origin (`new URL(actorId).origin`,
+i.e. the account's own collections). Every other direct fetch — foreign
+objects, actors, page URLs — is unauthenticated, so a crafted page can never
+make fedifox hand its token to a third party.
+
+**Id authority.** A document is only trusted for ids on the origin it was
+fetched from. If a candidate's `id` has a different origin than the URL that
+was fetched, that `id` is fetched (direct, unauthenticated) and *that*
+document is classified; if it in turn claims an id on yet another origin the
+candidate is rejected. The same check applies before name/handle are taken
+from an `attributedTo` actor document.
+
+`isApMediaType` deliberately accepts `application/ld+json` without the AS2
+profile parameter: many real-world sites omit it, and rejecting them would
+lose more discoveries than it protects against.
+
+Classification: `type ∈ {Person, Group, Organization, Service, Application}`
+→ `kind: actor`; anything else with an `id` → `kind: object`; `attributedTo`
+(string or object) is resolved to `{id, name, handle}` for the author
+actions, with `handle` derived from `preferredUsername@host` when no
+WebFinger reverse lookup is attempted.
+
+Results are cached per page URL (10 min, pruned on write) and per tab; the
+toolbar badge shows `AP` when a resource exists for the active tab and is
+cleared on navigation. The per-tab map lives in the event page's memory,
+which Firefox drops after ~30 s idle: every read falls back to the per-URL
+cache via `tabs.get(tabId).url`, and failing that asks the content script to
+rediscover (`page:rediscover`).
 
 
 ## Actions
@@ -160,6 +192,10 @@ stores an `ActionRecord` so `Undo` can reference it.
 `content` is HTML: the user's text escaped, with the leading mention rendered
 as `<a href="{actorId}">@{handle}</a>`; the `Mention` tag carries
 `{type: Mention, href: actorId, name: "@user@host"}`.
+
+A reply always cc's `as:Public` (plus the parent's readable addressing); v1
+does not offer unlisted or followers-only replies — a deliberate
+simplification, not an oversight.
 
 ### State ("did I already…")
 
