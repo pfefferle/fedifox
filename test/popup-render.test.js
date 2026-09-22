@@ -11,6 +11,14 @@ test('resourceView', () => {
   assert.deepEqual(resourceView(bob), { title: 'Bob', subtitle: '@bob@y.test', kind: 'actor', link: 'https://y.test/@bob' })
 })
 
+test('resourceView only links to http(s) URLs', () => {
+  assert.equal(resourceView({ ...note, url: 'javascript:alert(1)' }).link, note.id)
+  assert.equal(resourceView({ ...note, url: 'javascript:alert(1)', id: 'data:text/html,hi' }).link, null)
+  assert.equal(resourceView({ ...note, url: undefined }).link, note.id)
+  assert.equal(resourceView({ ...bob, url: 'ftp://y.test/bob' }).link, bob.id)
+  assert.equal(resourceView({ ...bob, url: 'http://y.test/@bob' }).link, 'http://y.test/@bob')
+})
+
 test('buttonsFor object and actor', () => {
   const off = { liked: false, shared: false, following: false, followingAuthor: false }
   assert.deepEqual(buttonsFor(note, off).map((b) => b.name), ['like', 'share', 'followAuthor', 'reply', 'mention'])

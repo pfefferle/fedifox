@@ -1,10 +1,19 @@
+// Both url and id come from a remote document; only http(s) may become an href.
+const httpUrl = (value) => {
+  try {
+    const { protocol } = new URL(value)
+    return protocol === 'http:' || protocol === 'https:' ? value : null
+  } catch { return null }
+}
+const safeLink = (resource) => httpUrl(resource.url) || httpUrl(resource.id)
+
 export function resourceView (resource) {
   if (resource.kind === 'actor') {
-    return { title: resource.name || resource.handle || resource.id, subtitle: resource.handle ? `@${resource.handle}` : '', kind: 'actor', link: resource.url }
+    return { title: resource.name || resource.handle || resource.id, subtitle: resource.handle ? `@${resource.handle}` : '', kind: 'actor', link: safeLink(resource) }
   }
   const author = resource.attributedTo
   const who = author?.handle ? `@${author.handle}` : author?.name || ''
-  return { title: resource.name || resource.type, subtitle: who ? `by ${who}` : '', kind: 'object', link: resource.url }
+  return { title: resource.name || resource.type, subtitle: who ? `by ${who}` : '', kind: 'object', link: safeLink(resource) }
 }
 
 function toggle (on, offName, offLabel, onName, onLabel) {

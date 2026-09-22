@@ -66,7 +66,8 @@ async function loadResource () {
   const view = resourceView(resource)
   $('kind').textContent = view.kind
   $('title').textContent = view.title
-  $('title').href = view.link
+  if (view.link) $('title').href = view.link
+  else $('title').removeAttribute('href')
   $('subtitle').textContent = view.subtitle
   const st = await send({ type: 'action:state', tabId })
   if (st.error) {
