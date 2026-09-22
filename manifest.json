@@ -46,6 +46,7 @@
     "identity",
     "contextMenus",
     "webRequest",
+    "webNavigation",
     "activeTab",
     "clipboardWrite"
   ],

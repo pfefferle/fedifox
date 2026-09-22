@@ -26,12 +26,13 @@ browser.webRequest.onHeadersReceived.addListener((details) => {
 }, { urls: ['<all_urls>'], types: ['main_frame'] }, ['responseHeaders'])
 
 browser.tabs.onRemoved.addListener((tabId) => router.forgetTab(tabId))
+// In-page (history API) navigations load no new document, so neither the
+// content script nor onHeadersReceived run again; ask for discovery anew.
+browser.webNavigation.onHistoryStateUpdated.addListener((details) => {
+  if (details.frameId === 0) router.tabNavigated(details.tabId)
+})
+
 browser.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.url && !info.status) {
-    // URL changed without a load: an in-page (history API) navigation.
-    router.tabNavigated(tabId)
-    return
-  }
   if (info.status === 'loading') {
     // Firefox fires this twice per navigation (before and after the response),
     // so only the tab's resolved resource is cleared here — the Link header
