@@ -1,7 +1,6 @@
 import { CIMD_URL, CLIENT_NAME, CLIENT_URI, SOFTWARE_ID, SOFTWARE_VERSION } from '../constants.js'
 import { FedifoxError } from '../errors.js'
-
-const hostOf = (url) => new URL(url).host
+import { hostOf } from '../url.js'
 
 export function registrationRequestBody (redirectUri) {
   return {

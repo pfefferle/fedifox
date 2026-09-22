@@ -2,8 +2,7 @@ import { OAUTH_SCOPE, TOKEN_REFRESH_LEEWAY_MS } from '../constants.js'
 import { FedifoxError } from '../errors.js'
 import { discoverEndpoints } from './discovery.js'
 import { resolveClientCreds } from './client-identity.js'
-
-const hostOf = (url) => new URL(url).host
+import { hostOf } from '../url.js'
 
 export function buildAuthorizationUrl (as, clientId, { redirectUri, codeChallenge, state, scope }) {
   const url = new URL(as.authorization_endpoint)

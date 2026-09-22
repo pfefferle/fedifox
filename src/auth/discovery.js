@@ -1,7 +1,5 @@
 import { FedifoxError } from '../errors.js'
-
-const originOf = (url) => new URL(url).origin
-const hostOf = (url) => new URL(url).host
+import { hostOf, originOf } from '../url.js'
 
 export async function fetchServerMetadata (origin, { fetch = globalThis.fetch } = {}) {
   const url = `${origin}/.well-known/oauth-authorization-server`
@@ -10,7 +8,8 @@ export async function fetchServerMetadata (origin, { fetch = globalThis.fetch } 
   if (!res.ok) return null
   try {
     const doc = await res.json()
-    return doc && doc.authorization_endpoint && doc.token_endpoint ? doc : null
+    if (!doc || !doc.authorization_endpoint || !doc.token_endpoint) return null
+    return { ...doc, issuer: doc.issuer || origin }
   } catch { return null }
 }
 

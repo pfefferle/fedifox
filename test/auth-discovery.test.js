@@ -71,3 +71,10 @@ test('RFC 9728 resource metadata path', async () => {
   const as = await discoverFromResourceMetadata('https://x.test/.well-known/oauth-protected-resource', { fetch })
   assert.equal(as.issuer, 'https://auth.test')
 })
+
+test('fetchServerMetadata defaults issuer to the origin when the document lacks it', async () => {
+  const { issuer, ...noIssuer } = meta
+  const { fetch } = createFetchStub({ 'GET https://x.test/.well-known/oauth-authorization-server': json(noIssuer) })
+  assert.deepEqual(await fetchServerMetadata('https://x.test', { fetch }), { ...noIssuer, issuer: 'https://x.test' })
+  assert.equal((await discoverEndpoints({ id: 'https://x.test/a' }, { fetch })).issuer, 'https://x.test')
+})
