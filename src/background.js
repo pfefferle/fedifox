@@ -10,7 +10,10 @@ const store = createStore(browser.storage.local)
 // The session uses a plain client (login has no token yet); everything else
 // goes through a client that refreshes tokens transparently.
 const session = createSession({ store, client: createClient(), browser, oauth })
-const client = createClient({ getAccessToken: (account) => session.ensureFreshToken(account) })
+const client = createClient({
+  getAccessToken: (account) => session.ensureFreshToken(account),
+  onUnauthorized: (account) => session.forceRefresh(account)
+})
 const resolver = createResolver({ client, store })
 const actions = createActions({ client, store })
 const router = createRouter({ store, session, resolver, actions, browser })

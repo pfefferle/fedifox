@@ -20,18 +20,25 @@ function itemId (item) {
   return item.id || null
 }
 
-export function createClient ({ fetch = globalThis.fetch, getAccessToken = async (account) => account.accessToken } = {}) {
-  async function authHeaders (account, url) {
-    if (!bearerAllowed(account, url)) return {}
-    return { Authorization: `Bearer ${await getAccessToken(account)}` }
-  }
-
+// onUnauthorized(account) → new access token or null. When set, a 401 on a
+// request that carried the bearer triggers one refresh and one retry.
+export function createClient ({ fetch = globalThis.fetch, getAccessToken = async (account) => account.accessToken, onUnauthorized = null } = {}) {
   async function request (url, init, step) {
     try {
       return await fetch(url, init)
     } catch (cause) {
       throw new FedifoxError(`Could not reach ${hostOf(url)}`, { step, status: undefined, detail: cause?.message, cause })
     }
+  }
+
+  async function authorizedRequest (url, init, step, account) {
+    if (!bearerAllowed(account, url)) return request(url, init, step)
+    const withToken = (token) => ({ ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } })
+    const res = await request(url, withToken(await getAccessToken(account)), step)
+    if (res.status !== 401 || !onUnauthorized) return res
+    const token = await onUnauthorized(account)
+    if (!token) return res
+    return request(url, withToken(token), step)
   }
 
   async function readJson (res, step, url) {
@@ -51,23 +58,23 @@ export function createClient ({ fetch = globalThis.fetch, getAccessToken = async
     const step = 'fetch-object'
     let res
     if (account?.proxyUrl) {
-      res = await request(account.proxyUrl, {
+      res = await authorizedRequest(account.proxyUrl, {
         method: 'POST',
-        headers: { Accept: AP_ACCEPT, 'Content-Type': 'application/x-www-form-urlencoded', ...(await authHeaders(account, account.proxyUrl)) },
+        headers: { Accept: AP_ACCEPT, 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ id: url }).toString()
-      }, step)
+      }, step, account)
     } else {
-      res = await request(url, { headers: { Accept: AP_ACCEPT, ...(await authHeaders(account, url)) } }, step)
+      res = await authorizedRequest(url, { headers: { Accept: AP_ACCEPT } }, step, account)
     }
     return readJson(res, step, url)
   }
 
   async function postActivity (account, activity) {
-    const res = await request(account.outbox, {
+    const res = await authorizedRequest(account.outbox, {
       method: 'POST',
-      headers: { 'Content-Type': AP_CONTENT_TYPE, Accept: AP_ACCEPT, ...(await authHeaders(account, account.outbox)) },
+      headers: { 'Content-Type': AP_CONTENT_TYPE, Accept: AP_ACCEPT },
       body: JSON.stringify(activity)
-    }, 'post-activity')
+    }, 'post-activity', account)
     if (!res.ok) {
       const detail = await res.text().catch(() => '')
       throw new FedifoxError(`${hostOf(account.outbox)} rejected the ${activity.type} (${res.status})`, { step: 'post-activity', status: res.status, detail })

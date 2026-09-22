@@ -117,3 +117,44 @@ test('network failures become FedifoxErrors naming the host', async () => {
   await assert.rejects(client.postActivity(account, { type: 'Like' }), (e) => e.name === 'FedifoxError' && e.step === 'post-activity' && /x\.test/.test(e.message))
   await assert.rejects(client.webfinger('bob@down.test'), (e) => e.name === 'FedifoxError' && e.step === 'webfinger')
 })
+
+test('a 401 on a bearer request triggers one forced refresh and a retry', async () => {
+  let attempts = 0
+  const { fetch, calls } = createFetchStub({
+    'GET https://x.test/a/liked': ({ headers }) => headers.get('authorization') === 'Bearer at-2' ? { body: { type: 'Collection', items: [] } } : { status: 401, body: '' },
+    'POST https://x.test/a/outbox': ({ headers }) => headers.get('authorization') === 'Bearer at-2' ? { status: 201, headers: { location: 'https://x.test/like/1' }, body: '' } : { status: 401, body: '' }
+  })
+  const refreshed = []
+  const client = createClient({ fetch, getAccessToken: async () => 'at-1', onUnauthorized: async (acc) => { attempts++; refreshed.push(acc.actorId); return 'at-2' } })
+  assert.deepEqual(await client.walkCollection('https://x.test/a/liked', { account }), { items: [], complete: true })
+  assert.equal(calls.length, 2)
+  assert.equal(calls[1].headers.get('authorization'), 'Bearer at-2')
+  assert.deepEqual(refreshed, [account.actorId])
+  assert.deepEqual(await client.postActivity(account, { type: 'Like', object: 'o' }), { activityId: 'https://x.test/like/1', status: 201 })
+  assert.equal(calls[3].headers.get('authorization'), 'Bearer at-2')
+  assert.equal(String(calls[3].body), String(calls[2].body))
+  assert.equal(attempts, 2)
+})
+
+test('a second 401 after the refresh is a FedifoxError with status 401; no refresh without a token or a handler', async () => {
+  const { fetch, calls } = createFetchStub({
+    'GET https://x.test/a/liked': { status: 401, body: '' },
+    'GET https://y.test/o': { status: 401, body: '' }
+  })
+  let attempts = 0
+  const client = createClient({ fetch, onUnauthorized: async () => { attempts++; return 'at-2' } })
+  await assert.rejects(client.fetchObject('https://x.test/a/liked', { account }), (e) => e.name === 'FedifoxError' && e.status === 401)
+  assert.equal(attempts, 1)
+  assert.equal(calls.length, 2)
+  // Foreign origin: no bearer was sent, so a 401 there is not ours to fix.
+  await assert.rejects(client.fetchObject('https://y.test/o', { account }), (e) => e.status === 401)
+  assert.equal(attempts, 1)
+  // Refresh yields nothing (no refresh token): the 401 stands, no retry.
+  const none = createClient({ fetch, onUnauthorized: async () => null })
+  await assert.rejects(none.fetchObject('https://x.test/a/liked', { account }), (e) => e.status === 401)
+  assert.equal(calls.length, 4)
+  // No handler wired at all: plain 401.
+  const plain = createClient({ fetch })
+  await assert.rejects(plain.fetchObject('https://x.test/a/liked', { account }), (e) => e.status === 401)
+  assert.equal(calls.length, 5)
+})
