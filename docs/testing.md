@@ -1,0 +1,39 @@
+# Manual test checklist
+
+Prerequisites: `npm start` in this repo (temporary profile; use `npm run start:persist` to keep logins between runs); a WordPress site with the ActivityPub
+plugin (`cd ../wordpress-activitypub && wp-env start`, user `admin`, actor
+`admin@localhost:8888` — add `allowInsecure: true` to the `createSession({...})`
+call in `src/background.js` while testing over http).
+
+## Login
+- [ ] Enter `admin@localhost:8888` → WordPress authorization page opens → approve → popup shows the account.
+- [ ] Enter an actor URL instead of a handle → same result.
+- [ ] Cancel the authorization window → popup shows "was cancelled or failed", no account stored.
+- [ ] Enter a host without OAuth (e.g. `example.org`) → "does not advertise an OAuth endpoint".
+- [ ] Log out → account gone; log in again → no new client registration (check `storage.local.clientCreds`).
+
+## Discovery
+- [ ] Open a WP post → toolbar symbol turns coloured and the symbol appears in the address bar; card shows type + author.
+- [ ] Open a WP author page → card shows actor with Follow/Mention.
+- [ ] Open a Mastodon status page → discovered via `<link rel="alternate">`.
+- [ ] While logged in to mastodon.social, open a remote profile there (`/@user@other.host`) → the actor is discovered (content negotiation must not carry the session cookie).
+- [ ] Open a page with only a `Link` header (curl -I to confirm) → discovered.
+- [ ] Open a non-fediverse page → "No ActivityPub object found".
+- [ ] Open a WP post, close the popup, wait 60 s (event page suspended), open the popup → card must still show.
+- [ ] Navigate inside a Mastodon web UI (SPA, no full page load) to a profile or another status → icon colour and card follow the new URL without a reload.
+- [ ] With an account whose actor has `endpoints.proxyUrl`: the page URL is never `POST`ed to the proxy (check the network log); only `<link>`/header candidates are.
+
+## Actions (each: check the WP admin / the target's collections)
+- [ ] Like → appears in `…/liked`; button turns to Unlike; Unlike → removed.
+- [ ] Share → Announce visible in outbox; Unshare → Undo in outbox.
+- [ ] Follow author → appears in `…/following`; Unfollow → removed.
+- [ ] Reply → Create/Note with `inReplyTo` and Mention tag in outbox.
+- [ ] Mention actor → Create/Note addressed to the actor.
+- [ ] Copy fediverse link → clipboard holds the AP `id`.
+- [ ] Context menu Like/Share on a discovered page → same as popup.
+
+## Tokens
+- [ ] Set `expiresAt` to now in `storage.local` → next action refreshes silently.
+- [ ] Invalidate the refresh token server-side → popup shows "(login required)" and disables actions.
+- [ ] Stop the server, then act → "Could not reach …", account is NOT marked "(login required)"; start it again and the next action works.
+- [ ] Revoke only the access token server-side → the next action gets a 401, refreshes once and succeeds.

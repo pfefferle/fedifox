@@ -1,0 +1,19 @@
+:root { color-scheme: light dark; font: 13px/1.4 system-ui, sans-serif; }
+body { width: 320px; margin: 0; padding: 12px; display: grid; gap: 12px; }
+header { display: flex; align-items: center; gap: 8px; }
+header strong { flex: 1; }
+header .logo { width: 20px; height: 20px; }
+label { display: grid; gap: 4px; margin-bottom: 8px; }
+input, textarea, select { width: 100%; box-sizing: border-box; padding: 6px; }
+button { padding: 6px 10px; cursor: pointer; }
+button.active { font-weight: 600; outline: 2px solid #6364ff; }
+button.link { background: none; border: none; padding: 0; color: #6364ff; text-decoration: underline; }
+.card { display: grid; gap: 2px; }
+.pill { font-size: 11px; text-transform: uppercase; opacity: .7; }
+.muted { opacity: .7; }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.row { display: flex; gap: 6px; margin-top: 6px; }
+footer { border-top: 1px solid #8884; padding-top: 8px; font-size: 12px; }
+footer.error { color: #c0392b; }
+pre { white-space: pre-wrap; max-height: 120px; overflow: auto; font-size: 11px; }
+[hidden] { display: none !important; }

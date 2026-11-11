@@ -1,0 +1,33 @@
+POST /wp-json/activitypub/1.0/actors/1/outbox HTTP/1.1
+Host: matthiaspfefferle.blog
+Content-Type: application/ld+json; profile="https://www.w3.org/ns/activitystreams"
+Accept: application/activity+json, application/ld+json; profile="https://www.w3.org/ns/activitystreams"
+Authorization: Bearer ACCESS_TOKEN
+
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "type": "Create",
+  "object": {
+    "type": "Note",
+    "content": "<p><a href=\"https://example.social/users/alice\" class=\"u-url mention\">@alice@example.social</a> Hello!</p>",
+    "tag": [
+      {
+        "type": "Mention",
+        "href": "https://example.social/users/alice",
+        "name": "@alice@example.social"
+      }
+    ],
+    "to": [
+      "https://example.social/users/alice"
+    ],
+    "cc": [
+      "https://www.w3.org/ns/activitystreams#Public"
+    ]
+  },
+  "to": [
+    "https://example.social/users/alice"
+  ],
+  "cc": [
+    "https://www.w3.org/ns/activitystreams#Public"
+  ]
+}

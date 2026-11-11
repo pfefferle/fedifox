@@ -7,9 +7,10 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "lint": "eslint src test scripts",
-    "start": "web-ext run --source-dir . --firefox-profile fedifox-dev --keep-profile-changes",
-    "build": "web-ext build --source-dir . --artifacts-dir dist --overwrite-dest --ignore-files docs node_modules test scripts dist eslint.config.js package-lock.json",
-    "vendor": "node scripts/vendor.js"
+    "start": "web-ext run --source-dir .",
+    "build": "web-ext build --source-dir . --artifacts-dir dist --overwrite-dest --ignore-files docs node_modules test scripts dist .profile eslint.config.js package-lock.json",
+    "vendor": "node scripts/vendor.js",
+    "start:persist": "web-ext run --source-dir . --firefox-profile ./.profile --profile-create-if-missing --keep-profile-changes"
   },
   "devDependencies": {
     "@stylistic/eslint-plugin": "^5.0.0",
@@ -17,5 +18,7 @@
     "oauth4webapi": "3.8.8",
     "web-ext": "^10.7.0"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }
