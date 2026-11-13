@@ -4,11 +4,12 @@
   "description": "Interact with the ActivityPub object behind any web page from your own fediverse account.",
   "type": "module",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "test": "node --test test/*.test.js",
     "lint": "eslint src test scripts",
     "start": "web-ext run --source-dir .",
-    "build": "web-ext build --source-dir . --artifacts-dir dist --overwrite-dest --ignore-files docs node_modules test scripts dist .profile eslint.config.js package-lock.json",
+    "build": "web-ext build --source-dir . --artifacts-dir dist --overwrite-dest --ignore-files docs node_modules test scripts dist .profile eslint.config.js package-lock.json amo-metadata.json",
     "vendor": "node scripts/vendor.js",
     "start:persist": "web-ext run --source-dir . --firefox-profile ./.profile --profile-create-if-missing --keep-profile-changes"
   },
