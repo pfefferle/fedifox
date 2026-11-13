@@ -1,0 +1,42 @@
+name: Publish to AMO
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check tag matches manifest version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest=$(node -p "require('./manifest.json').version")
+          [ "$tag" = "$manifest" ] || { echo "Tag $tag does not match manifest version $manifest"; exit 1; }
+
+      - run: npm test
+      - run: npx web-ext lint --source-dir .
+
+      - name: Sign and submit
+        run: |
+          npx web-ext sign --source-dir . --artifacts-dir dist --channel listed \
+            --ignore-files docs node_modules test scripts dist .profile eslint.config.js package-lock.json \
+            --api-key "${{ secrets.AMO_JWT_ISSUER }}" \
+            --api-secret "${{ secrets.AMO_JWT_SECRET }}"
+
+      - name: Attach signed .xpi to release
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.xpi --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
