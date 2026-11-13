@@ -29,14 +29,19 @@ jobs:
       - run: npm test
       - run: npx web-ext lint --source-dir .
 
+      - id: build
+        run: npm run build
+
       - name: Sign and submit
         run: |
           npx web-ext sign --source-dir . --artifacts-dir dist --channel listed \
-            --ignore-files docs node_modules test scripts dist .profile eslint.config.js package-lock.json \
+            --ignore-files docs node_modules test scripts dist .profile eslint.config.js package-lock.json amo-metadata.json \
+            --amo-metadata amo-metadata.json \
             --api-key "${{ secrets.AMO_JWT_ISSUER }}" \
             --api-secret "${{ secrets.AMO_JWT_SECRET }}"
 
-      - name: Attach signed .xpi to release
-        run: gh release upload "$GITHUB_REF_NAME" dist/*.xpi --clobber
+      - name: Attach .zip and signed .xpi to release
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.zip $(ls dist/*.xpi 2>/dev/null) --clobber
         env:
           GH_TOKEN: ${{ github.token }}

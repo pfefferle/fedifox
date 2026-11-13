@@ -1,0 +1,13 @@
+{
+  "categories": {
+    "firefox": [
+      "social-communication"
+    ]
+  },
+  "summary": {
+    "en-US": "Like, share, follow and reply to the ActivityPub object behind any web page from your own fediverse account."
+  },
+  "version": {
+    "license": "MIT"
+  }
+}
