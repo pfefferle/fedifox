@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FediFox",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Like, share, follow and reply to the ActivityPub object behind any web page from your own fediverse account.",
   "icons": {
     "48": "icons/symbol-color.svg",

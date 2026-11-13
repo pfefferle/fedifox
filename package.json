@@ -1,6 +1,6 @@
 {
   "name": "fedifox",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Interact with the ActivityPub object behind any web page from your own fediverse account.",
   "type": "module",
   "private": true,
