@@ -72,11 +72,14 @@ export function createClient ({ fetch = globalThis.fetch, getAccessToken = async
     return readJson(res, step, url)
   }
 
+  // Every outgoing activity names the account as actor: some servers (ONI) do
+  // not fill it in from the token. attributedTo is the server's job (AP §6.2).
   async function postActivity (account, activity) {
+    const outgoing = { ...activity, actor: account.actorId }
     const res = await authorizedRequest(account.outbox, {
       method: 'POST',
       headers: { 'Content-Type': AP_CONTENT_TYPE, Accept: AP_ACCEPT },
-      body: JSON.stringify(activity)
+      body: JSON.stringify(outgoing)
     }, 'post-activity', account)
     if (!res.ok) {
       const detail = await res.text().catch(() => '')

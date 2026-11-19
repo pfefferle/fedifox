@@ -1,5 +1,5 @@
-POST /wp-json/activitypub/1.0/actors/1/outbox HTTP/1.1
-Host: matthiaspfefferle.blog
+POST /wp-api/activitypub/1.0/actors/1/outbox HTTP/1.1
+Host: notiz.blog
 Content-Type: application/ld+json; profile="https://www.w3.org/ns/activitystreams"
 Accept: application/activity+json, application/ld+json; profile="https://www.w3.org/ns/activitystreams"
 Authorization: Bearer ACCESS_TOKEN
@@ -29,5 +29,6 @@ Authorization: Bearer ACCESS_TOKEN
   ],
   "cc": [
     "https://www.w3.org/ns/activitystreams#Public"
-  ]
+  ],
+  "actor": "https://notiz.blog/author/matthias-pfefferle/"
 }
