@@ -1,5 +1,6 @@
 import { describeError, FedifoxError } from './errors.js'
 import { headerCandidates } from './discovery/resolver.js'
+import { isApMediaType } from './constants.js'
 
 export const ICON_FOUND = 'icons/symbol-color.svg'
 export const ICON_NONE = 'icons/symbol.svg'
@@ -11,6 +12,7 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
   // content script to run discovery again.
   const tabResources = new Map()
   const tabHeaderLinks = new Map()
+  const tabIsApDocument = new Map()
   const tabGeneration = new Map()
 
   const generation = (tabId) => tabGeneration.get(tabId) || 0
@@ -116,19 +118,30 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
     }
   }
 
+  async function handle (message, sender) {
+    try {
+      const handler = handlers[message?.type]
+      if (!handler) throw new FedifoxError(`Unknown message type ${message?.type}`, { step: 'router' })
+      return await handler(message, sender)
+    } catch (e) {
+      console.warn('fedifox:', message?.type, describeError(e))
+      return { error: describeError(e) }
+    }
+  }
+
   return {
-    async handle (message, sender) {
-      try {
-        const handler = handlers[message?.type]
-        if (!handler) throw new FedifoxError(`Unknown message type ${message?.type}`, { step: 'router' })
-        return await handler(message, sender)
-      } catch (e) {
-        console.warn('fedifox:', message?.type, describeError(e))
-        return { error: describeError(e) }
-      }
-    },
+    handle,
     recordHeaderLinks (tabId, linkHeaderValue, baseUrl) {
       tabHeaderLinks.set(tabId, headerCandidates(linkHeaderValue, baseUrl))
+    },
+    recordContentType (tabId, contentType) {
+      tabIsApDocument.set(tabId, isApMediaType(contentType))
+    },
+    // A raw ActivityPub document opens in Firefox's JSON viewer, where no
+    // content script runs; resolve its URL here once the navigation completed.
+    async pageLoaded (tabId, url) {
+      if (!tabIsApDocument.get(tabId)) return
+      await handle({ type: 'page:discovered', url }, { tab: { id: tabId } })
     },
     clearResource (tabId) {
       tabResources.delete(tabId)
@@ -137,6 +150,7 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
     forgetTab (tabId) {
       tabResources.delete(tabId)
       tabHeaderLinks.delete(tabId)
+      tabIsApDocument.delete(tabId)
       bumpGeneration(tabId)
     },
     // A history.pushState navigation: no new document, no new response, so
@@ -145,6 +159,7 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
     async tabNavigated (tabId) {
       tabResources.delete(tabId)
       tabHeaderLinks.delete(tabId)
+      tabIsApDocument.delete(tabId)
       bumpGeneration(tabId)
       await setIcon(tabId, null)
       try { await browser.tabs.sendMessage(tabId, { type: 'page:rediscover' }) } catch { /* no content script on this tab */ }

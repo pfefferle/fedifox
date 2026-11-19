@@ -173,3 +173,21 @@ test('an in-page (pushState) navigation clears the tab and asks the content scri
   assert.deepEqual(calls.at(-1)[1].headerLinks, [])
   assert.equal(calls.at(-1)[1].pageUrl, 'https://m.test/@alice')
 })
+
+// Raw ActivityPub documents open in Firefox's JSON viewer, which runs no
+// content script; the background resolves them once the navigation completed.
+test('a raw ActivityPub response is resolved by the background, other pages are left to the content script', async () => {
+  const { router, browser, calls } = setup()
+  const types = { 7: 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"', 8: 'application/activity+json', 9: 'text/html; charset=utf-8' }
+  for (const [tabId, type] of Object.entries(types)) {
+    router.recordContentType(Number(tabId), type)
+    router.clearResource(Number(tabId)) // the second tabs.onUpdated "loading" fires after the headers
+    await router.pageLoaded(Number(tabId), `https://y.test/raw/${tabId}`)
+  }
+  assert.deepEqual(calls.map(([, args]) => args.pageUrl), ['https://y.test/raw/7', 'https://y.test/raw/8'])
+  assert.deepEqual(await router.handle({ type: 'tab:resource', tabId: 7 }), { resource: note })
+  assert.deepEqual(browser.icons.filter((i) => i.tabId === 8).at(-1), { tabId: 8, shown: true })
+  router.forgetTab(7)
+  await router.pageLoaded(7, 'https://y.test/raw/7')
+  assert.equal(calls.length, 2, 'a forgotten tab does not resolve again')
+})

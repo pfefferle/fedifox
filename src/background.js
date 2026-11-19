@@ -25,9 +25,16 @@ const router = createRouter({ store, session, resolver, actions, browser })
 browser.runtime.onMessage.addListener((message, sender) => router.handle(message, sender))
 
 browser.webRequest.onHeadersReceived.addListener((details) => {
-  const link = (details.responseHeaders || []).find((h) => h.name.toLowerCase() === 'link')
-  router.recordHeaderLinks(details.tabId, link?.value || '', details.url)
+  const header = (name) => (details.responseHeaders || []).find((h) => h.name.toLowerCase() === name)?.value || ''
+  router.recordHeaderLinks(details.tabId, header('link'), details.url)
+  router.recordContentType(details.tabId, header('content-type'))
 }, { urls: ['<all_urls>'], types: ['main_frame'] }, ['responseHeaders'])
+
+// Fires after both tabs.onUpdated "loading" events, so the result is not
+// discarded as stale; only raw ActivityPub documents are resolved here.
+browser.webNavigation.onCompleted.addListener((details) => {
+  if (details.frameId === 0) router.pageLoaded(details.tabId, details.url)
+})
 
 browser.tabs.onRemoved.addListener((tabId) => router.forgetTab(tabId))
 // In-page (history API) navigations load no new document, so neither the
