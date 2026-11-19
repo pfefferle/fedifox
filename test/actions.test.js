@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createActions } from '../src/actions.js'
+import { createClient } from '../src/client/activitypub.js'
+import { createFetchStub } from './helpers/fetch-stub.js'
 import { createStore } from '../src/state/storage.js'
 import { createStorageArea } from './helpers/storage-stub.js'
 import { AS_PUBLIC } from '../src/constants.js'
@@ -113,4 +115,30 @@ test('failed POST writes no record', async () => {
   const actions = createActions({ client: fakeClient({ fail: true }), store })
   await assert.rejects(actions.like(account, note), (e) => e.status === 403)
   assert.equal(await store.getActionRecord(account.actorId, 'Like', note.id), null)
+})
+
+// Invariant: every activity fedifox sends names the account as its actor;
+// servers like ONI do not fill it in. A new sending action must be added here.
+test('every sent activity carries the account as actor', async () => {
+  let n = 0
+  const { fetch, calls } = createFetchStub({ [`POST ${account.outbox}`]: () => ({ status: 201, headers: { location: `https://x.test/act/${++n}` }, body: '' }) })
+  const actions = createActions({ client: createClient({ fetch }), store: createStore(createStorageArea()) })
+  const sends = {
+    like: () => actions.like(account, note),
+    undoLike: () => actions.undoLike(account, note),
+    share: () => actions.share(account, note),
+    undoShare: () => actions.undoShare(account, note),
+    follow: () => actions.follow(account, bobId),
+    undoFollow: () => actions.undoFollow(account, bobId),
+    reply: () => actions.reply(account, note, 'hi'),
+    mention: () => actions.mention(account, { id: bobId, handle: 'bob@y.test' }, 'hi')
+  }
+  const sending = Object.keys(actions).filter((k) => k !== 'state')
+  assert.deepEqual(sending.sort(), Object.keys(sends).sort(), 'decide how a new action is covered here')
+  for (const [name, send] of Object.entries(sends)) {
+    const before = calls.length
+    await send()
+    const activity = JSON.parse(calls[before].body)
+    assert.equal(activity.actor, account.actorId, `${name}: actor`)
+  }
 })
