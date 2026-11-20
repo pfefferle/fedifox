@@ -90,6 +90,49 @@ test('a POST that returns no activity id still records the action, and undo expl
   await assert.rejects(actions.undoShare(account, note), (e) => e.step === 'undo' && /did not return an id/.test(e.message))
 })
 
+// A follow made elsewhere (another client, another browser profile) is only
+// known from the following collection. An Undo that embeds the Follow needs no
+// activity id: servers match it on the Follow's actor and target.
+test('unfollow without a recorded Follow embeds the Follow in the Undo', async () => {
+  const store = createStore(createStorageArea())
+  const client = fakeClient({ following: [bobId] })
+  const actions = createActions({ client, store })
+  assert.equal((await actions.state(account, bob)).following, true)
+  assert.deepEqual(await actions.undoFollow(account, bobId), { activityId: 'https://x.test/act/1' })
+  assert.deepEqual(client.posted[0], {
+    '@context': 'https://www.w3.org/ns/activitystreams',
+    type: 'Undo',
+    object: { type: 'Follow', actor: account.actorId, object: bobId },
+    to: [bobId]
+  })
+})
+
+test('unfollow embeds the Follow when the server never returned an id for it', async () => {
+  const store = createStore(createStorageArea())
+  const client = fakeClient()
+  const post = client.postActivity
+  client.postActivity = async () => ({ activityId: null, status: 202 })
+  const actions = createActions({ client, store })
+  await actions.follow(account, bobId)
+  client.postActivity = post
+  await actions.undoFollow(account, bobId)
+  assert.deepEqual(client.posted[0].object, { type: 'Follow', actor: account.actorId, object: bobId })
+  assert.equal(await store.getActionRecord(account.actorId, 'Follow', bobId), null)
+})
+
+// Like and Announce have no such fallback on servers, so state says whether
+// an undo can be sent at all.
+test('state tells whether a like or share can be undone', async () => {
+  const store = createStore(createStorageArea())
+  const client = fakeClient({ liked: [note.id] })
+  const actions = createActions({ client, store })
+  const elsewhere = await actions.state(account, note)
+  assert.equal(elsewhere.liked, true)
+  assert.equal(elsewhere.likeId, undefined)
+  await store.saveActionRecord(account.actorId, 'Like', note.id, 'https://x.test/act/9', 1)
+  assert.equal((await actions.state(account, note)).likeId, 'https://x.test/act/9')
+})
+
 test('reply inherits audience and mentions the author; mention targets the actor', async () => {
   const store = createStore(createStorageArea())
   const client = fakeClient()

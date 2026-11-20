@@ -1,11 +1,13 @@
 import { describeError, FedifoxError } from './errors.js'
 import { headerCandidates } from './discovery/resolver.js'
 import { isApMediaType } from './constants.js'
+import { parseLink } from './link.js'
+import { hostOf } from './url.js'
 
 export const ICON_FOUND = 'icons/symbol-color.svg'
 export const ICON_NONE = 'icons/symbol.svg'
 
-export function createRouter ({ store, session, resolver, actions, browser, now = () => Date.now() }) {
+export function createRouter ({ store, session, resolver, actions, client, browser, now = () => Date.now() }) {
   // Per-tab state lives in memory only; Firefox suspends the event page after
   // ~30 s idle and restarts it with empty maps, so every read falls back to
   // the discovery cache keyed by the tab's URL, and failing that asks the
@@ -59,6 +61,23 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
     return resource
   }
 
+  // A fediverse link is resolved on its own, keyed by the link itself in the
+  // discovery cache, so it never replaces what a tab's page was discovered as.
+  async function linkResource (link, { fresh = false } = {}) {
+    const { url, handle, action } = parseLink(link)
+    let resource = fresh ? undefined : await store.getDiscovery(link, now())
+    if (resource === undefined) {
+      const target = url || await client.webfinger(handle)
+      const account = (await store.getSelectedAccount()) || undefined
+      resource = await resolver.resolve({ pageUrl: link, objectCandidates: [target], account, fresh: true })
+    }
+    if (!resource) throw new FedifoxError(`${hostOf(url || `https://${handle.split('@')[1]}`)} has no ActivityPub object at this address`, { step: 'link', detail: url || handle })
+    return { resource, action }
+  }
+
+  // The popup acts on the link it was opened for, otherwise on its tab's page.
+  const resourceOf = async (msg) => msg.link ? (await linkResource(msg.link)).resource : requireResource(msg.tabId)
+
   function requireAuthor (resource) {
     const author = resource.attributedTo
     if (!author?.id) throw new FedifoxError('This object has no author to act on', { step: 'action' })
@@ -98,6 +117,31 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
       }
       return { ok: true }
     },
+    // The popup was opened for a fediverse link and asks what it leads to.
+    async 'link:open' (msg) { return linkResource(msg.link, { fresh: true }) },
+    // Clicks on fediverse links are only taken over while an account can act
+    // on them; the content script asks, because it has to decide synchronously
+    // when the click happens.
+    async 'link:hooked' () { return { hooked: await requireAccount().then(() => true, () => false) } },
+    // A clicked link: open the toolbar popup over the page, with the link
+    // attached for this one opening. Firefox before 149 only opens the popup
+    // on a user gesture; there the tab goes to the popup as a page instead.
+    async 'link:clicked' (msg, sender) {
+      await requireAccount()
+      parseLink(msg.link)
+      const tabId = sender.tab.id
+      const popup = `${browser.runtime.getURL('src/popup/popup.html')}?link=${encodeURIComponent(msg.link)}`
+      try {
+        await browser.action.setPopup({ tabId, popup })
+        await browser.action.openPopup({ windowId: sender.tab.windowId })
+      } catch (e) {
+        console.debug('fedifox: could not open the popup', e?.message)
+        await browser.tabs.update(tabId, { url: popup })
+      } finally {
+        await browser.action.setPopup({ tabId, popup: null })
+      }
+      return { ok: true }
+    },
     async 'tab:resource' (msg) { return { resource: (await resourceFor(msg.tabId)) || null } },
     async 'accounts:list' () { return { accounts: await store.getAccounts(), selectedActorId: await store.getSelectedActorId() } },
     async 'accounts:select' (msg) { await store.setSelectedActorId(msg.actorId); return { ok: true } },
@@ -105,12 +149,12 @@ export function createRouter ({ store, session, resolver, actions, browser, now 
     async 'auth:logout' (msg) { await session.logout(msg.actorId); return { ok: true } },
     async 'action:state' (msg) {
       const account = await requireAccount()
-      const resource = await requireResource(msg.tabId)
+      const resource = await resourceOf(msg)
       return { state: await actions.state(account, resource) }
     },
     async 'action:run' (msg) {
       const account = await requireAccount()
-      const resource = await requireResource(msg.tabId)
+      const resource = await resourceOf(msg)
       const run = runners[msg.name]
       if (!run) throw new FedifoxError(`Unknown action ${msg.name}`, { step: 'action' })
       const { activityId } = await run(account, resource, msg.text || '')

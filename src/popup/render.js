@@ -16,8 +16,11 @@ export function resourceView (resource) {
   return { title: resource.name || resource.type, subtitle: who ? `by ${who}` : '', kind: 'object', link: safeLink(resource) }
 }
 
-function toggle (on, offName, offLabel, onName, onLabel) {
-  return on ? { name: onName, label: onLabel, active: true } : { name: offName, label: offLabel, active: false }
+// `undoable` is false when the action is done but cannot be taken back from
+// here; the button then only shows the state.
+function toggle (on, offName, offLabel, onName, onLabel, undoable = true) {
+  if (!on) return { name: offName, label: offLabel, active: false }
+  return undoable ? { name: onName, label: onLabel, active: true } : { name: onName, label: onLabel, active: true, disabled: true }
 }
 
 export function buttonsFor (resource, state) {
@@ -28,8 +31,10 @@ export function buttonsFor (resource, state) {
     ]
   }
   const buttons = [
-    toggle(state.liked, 'like', 'Like', 'undoLike', 'Unlike'),
-    toggle(state.shared, 'share', 'Share', 'undoShare', 'Unshare')
+    // Undoing a like or share needs the id of that activity, which is only
+    // known for what fedifox sent itself and the server answered with an id.
+    toggle(state.liked, 'like', 'Like', 'undoLike', state.likeId ? 'Unlike' : 'Liked', Boolean(state.likeId)),
+    toggle(state.shared, 'share', 'Share', 'undoShare', state.shareId ? 'Unshare' : 'Shared', Boolean(state.shareId))
   ]
   const author = resource.attributedTo
   if (author?.id) {
@@ -39,6 +44,21 @@ export function buttonsFor (resource, state) {
   buttons.push({ name: 'reply', label: 'Reply', active: false })
   if (author?.id) buttons.push({ name: 'mention', label: 'Mention', active: false })
   return buttons
+}
+
+// The button a link asked for. A link never offers to undo: when the action
+// is already done its button is an undo button and nothing is picked.
+export function intendedButton (buttons, action) {
+  const names = { follow: ['follow', 'followAuthor'], like: ['like'], share: ['share'], reply: ['reply'] }[action] || []
+  return buttons.find((b) => names.includes(b.name))?.name
+}
+
+// What the popup offers for a link: only the action the link asked for, so
+// the popup reads as a confirmation. Without such an action — none named, not
+// possible here, or already done — all buttons are offered as usual.
+export function offeredButtons (buttons, action) {
+  const name = intendedButton(buttons, action)
+  return name ? buttons.filter((b) => b.name === name) : buttons
 }
 
 export function accountLabel (account) {

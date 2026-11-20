@@ -12,6 +12,11 @@ for [ActivityPub HTML Discovery](https://swicg.github.io/activitypub-html-discov
 and a sibling of the Social Web Foundation's
 [activitypub-browser-extension](https://github.com/social-web-foundation/activitypub-browser-extension).
 
+It also reacts to fediverse links (`web+ap:`, `web+activitypub:`,
+`web+follow:`, `web+like:`, `web+share:`, `acct:`, `fedi:`): while you are
+logged in, a click opens the popup over the page you are on. See
+[docs/test-links.md](docs/test-links.md) for every supported form.
+
 ## Requirements on the server
 
 - An actor with `outbox`, `liked`, `following`, `followers`.

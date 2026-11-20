@@ -2,19 +2,28 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRouter } from '../src/messages.js'
 import { createStore } from '../src/state/storage.js'
+import { FedifoxError } from '../src/errors.js'
 import { createStorageArea } from './helpers/storage-stub.js'
 
 const account = { actorId: 'https://x.test/a', handle: 'a@x.test', outbox: 'https://x.test/a/outbox', liked: 'https://x.test/a/liked', following: 'https://x.test/a/following', followers: 'https://x.test/a/followers', accessToken: 't', needsReauth: false }
 const note = { id: 'https://y.test/posts/1', kind: 'object', type: 'Note', url: 'https://y.test/@bob/1', attributedTo: { id: 'https://y.test/users/bob', handle: 'bob@y.test' }, audience: { to: [], cc: [] } }
 
-function makeBrowser ({ tabs = {} } = {}) {
+function makeBrowser ({ tabs = {}, openPopup = async () => {} } = {}) {
   const icons = []
   const sent = []
+  const popups = []
   return {
     icons,
     sent,
-    action: { setIcon: async (o) => icons.push(o) }, pageAction: { show: async (tabId) => icons.push({ tabId, shown: true }), hide: async (tabId) => icons.push({ tabId, shown: false }) },
+    popups,
+    action: {
+      setIcon: async (o) => icons.push(o),
+      setPopup: async (o) => { popups.push(['setPopup', o]) },
+      openPopup: async (o) => { popups.push(['openPopup', o]); await openPopup(o) }
+    }, pageAction: { show: async (tabId) => icons.push({ tabId, shown: true }), hide: async (tabId) => icons.push({ tabId, shown: false }) },
+    runtime: { getURL: (path) => `moz-extension://fedifox/${path}` },
     tabs: {
+      async update (tabId, props) { sent.push([tabId, props]) },
       async get (tabId) { if (!tabs[tabId]) throw new Error(`Invalid tab ID: ${tabId}`); return { id: tabId, ...tabs[tabId] } },
       async sendMessage (tabId, msg) { sent.push([tabId, msg]); if (!tabs[tabId]) throw new Error('Could not establish connection') }
     }
@@ -38,7 +47,14 @@ function setup ({ resource = note, store = createStore(createStorageArea()), bro
     async login ({ input }) { calls.push(['login', input]); await store.saveAccount(account); await store.setSelectedActorId(account.actorId); return account },
     async logout (actorId) { calls.push(['logout', actorId]); await store.removeAccount(actorId) }
   }
-  const router = createRouter({ store, session, resolver, actions, browser, now: () => NOW })
+  const client = {
+    async webfinger (handle) {
+      calls.push(['webfinger', handle])
+      if (handle !== 'bob@y.test') throw new FedifoxError('y.test has no ActivityPub actor', { step: 'webfinger' })
+      return 'https://y.test/users/bob'
+    }
+  }
+  const router = createRouter({ store, session, resolver, actions, client, browser, now: () => NOW })
   return { router, store, browser, calls }
 }
 
@@ -158,6 +174,93 @@ test('errors are returned, not thrown', async () => {
   assert.match(unknown.error.message, /unknown message/i)
   const badAction = await router.handle({ type: 'action:state', tabId: 99 })
   assert.match(badAction.error.message, /log in/i)
+})
+
+const POPUP = 'moz-extension://fedifox/src/popup/popup.html'
+
+test('link:open resolves a link without touching the resource of the tab', async () => {
+  const link = 'web+activitypub:y.test/posts/1?intent=like'
+  const { router, calls } = setup()
+  assert.deepEqual(await router.handle({ type: 'link:open', link }), { resource: note, action: 'like' })
+  const [, args] = calls.find(([name]) => name === 'resolve')
+  assert.deepEqual(args.objectCandidates, ['https://y.test/posts/1'])
+  assert.equal(args.pageUrl, link)
+  assert.equal(args.fresh, true)
+  assert.equal((await router.handle({ type: 'tab:resource', tabId: 7 })).resource, null)
+})
+
+test('link:open looks a handle up with WebFinger first', async () => {
+  const { router, calls } = setup()
+  const res = await router.handle({ type: 'link:open', link: 'acct:bob@y.test' })
+  assert.equal(res.action, undefined)
+  assert.deepEqual(calls[0], ['webfinger', 'bob@y.test'])
+  assert.deepEqual(calls[1][1].objectCandidates, ['https://y.test/users/bob'])
+})
+
+test('link:open reports a link that leads nowhere', async () => {
+  const { router } = setup({ resource: null })
+  const nothing = await router.handle({ type: 'link:open', link: 'web+ap://y.test/gone' })
+  assert.equal(nothing.error.step, 'link')
+  assert.match(nothing.error.message, /y\.test/)
+  const unparsable = await router.handle({ type: 'link:open', link: 'web+follow:javascript:alert(1)' })
+  assert.equal(unparsable.error.step, 'link')
+  const unknown = await router.handle({ type: 'link:open', link: 'acct:nobody@y.test' })
+  assert.equal(unknown.error.step, 'webfinger')
+})
+
+test('actions for a link act on the link target, not on the page of the tab', async () => {
+  const page = { ...note, id: 'https://m.test/posts/9' }
+  const link = 'web+like:https://y.test/posts/1'
+  const { router, store, calls } = setup({ browser: makeBrowser({ tabs: { 7: { url: 'https://m.test/9' } } }) })
+  await store.saveAccount(account)
+  await store.saveDiscovery('https://m.test/9', page, NOW)
+  await router.handle({ type: 'link:open', link })
+  const resolved = calls.filter(([name]) => name === 'resolve').length
+  assert.deepEqual((await router.handle({ type: 'action:state', tabId: 7, link })).state, { liked: false, shared: false, following: false, followingAuthor: false })
+  const res = await router.handle({ type: 'action:run', tabId: 7, link, name: 'like' })
+  assert.equal(res.activityId, 'https://x.test/act/1')
+  assert.deepEqual(calls.find(([name]) => name === 'like'), ['like', account.actorId, note.id])
+  // The link was resolved once; state and run are served from the cache.
+  assert.equal(calls.filter(([name]) => name === 'resolve').length, resolved)
+  // Without a link the same tab still acts on its own page.
+  await router.handle({ type: 'action:run', tabId: 7, name: 'like' })
+  assert.deepEqual(calls.filter(([name]) => name === 'like')[1], ['like', account.actorId, page.id])
+})
+
+test('link clicks are only taken over while an account is connected', async () => {
+  const { router, store, browser } = setup()
+  assert.deepEqual(await router.handle({ type: 'link:hooked' }), { hooked: false })
+  const refused = await router.handle({ type: 'link:clicked', link: 'acct:bob@y.test' }, { tab: { id: 7, windowId: 1 } })
+  assert.equal(refused.error.step, 'account')
+  assert.deepEqual(browser.popups, [])
+  await store.saveAccount({ ...account, needsReauth: true })
+  assert.deepEqual(await router.handle({ type: 'link:hooked' }), { hooked: false })
+  await store.saveAccount(account)
+  assert.deepEqual(await router.handle({ type: 'link:hooked' }), { hooked: true })
+})
+
+test('link:clicked opens the toolbar popup with the link and leaves the page alone', async () => {
+  const { router, store, browser } = setup()
+  await store.saveAccount(account)
+  assert.deepEqual(await router.handle({ type: 'link:clicked', link: 'acct:bob@y.test' }, { tab: { id: 7, windowId: 1 } }), { ok: true })
+  // Set for this tab, opened, and put back to the default popup.
+  assert.deepEqual(browser.popups, [
+    ['setPopup', { tabId: 7, popup: `${POPUP}?link=acct%3Abob%40y.test` }],
+    ['openPopup', { windowId: 1 }],
+    ['setPopup', { tabId: 7, popup: null }]
+  ])
+  assert.deepEqual(browser.sent, [])
+  const bad = await router.handle({ type: 'link:clicked', link: 'fedi://hashtag/fediverse' }, { tab: { id: 7, windowId: 1 } })
+  assert.equal(bad.error.step, 'link')
+  assert.equal(browser.popups.length, 3)
+})
+
+test('link:clicked falls back to the handler page when the popup cannot be opened', async () => {
+  const { router, store, browser } = setup({ browser: makeBrowser({ openPopup: async () => { throw new Error('openPopup requires a user gesture') } }) })
+  await store.saveAccount(account)
+  assert.deepEqual(await router.handle({ type: 'link:clicked', link: 'acct:bob@y.test' }, { tab: { id: 7, windowId: 1 } }), { ok: true })
+  assert.deepEqual(browser.sent, [[7, { url: `${POPUP}?link=acct%3Abob%40y.test` }]])
+  assert.deepEqual(browser.popups.at(-1), ['setPopup', { tabId: 7, popup: null }])
 })
 
 test('an in-page (pushState) navigation clears the tab and asks the content script to rediscover', async () => {

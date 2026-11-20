@@ -41,9 +41,13 @@ export function createActions ({ client, store, now = () => Date.now() }) {
 
   async function undoOf (account, type, targetId, addressing) {
     const record = await store.getActionRecord(account.actorId, type, targetId)
-    if (!record) throw new FedifoxError(`Nothing to undo: fedifox has no ${type} of this on record`, { step: 'undo', detail: targetId })
-    if (!record.activityId) throw new FedifoxError(`Cannot undo: the server did not return an id for the ${type}`, { step: 'undo', detail: targetId })
-    const result = await client.postActivity(account, build.undo(record.activityId, addressing))
+    // A Follow made elsewhere, or one the server returned no id for, can still
+    // be undone: servers match an Undo that embeds the Follow on its actor and
+    // target. Like and Announce have no such fallback and need the id.
+    const activity = record?.activityId || (type === 'Follow' ? { type: 'Follow', actor: account.actorId, object: targetId } : null)
+    if (!activity && !record) throw new FedifoxError(`Nothing to undo: fedifox has no ${type} of this on record`, { step: 'undo', detail: targetId })
+    if (!activity) throw new FedifoxError(`Cannot undo: the server did not return an id for the ${type}`, { step: 'undo', detail: targetId })
+    const result = await client.postActivity(account, build.undo(activity, addressing))
     await store.removeActionRecord(account.actorId, type, targetId)
     return { activityId: result.activityId }
   }

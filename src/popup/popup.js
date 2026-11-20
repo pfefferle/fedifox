@@ -1,4 +1,4 @@
-import { resourceView, buttonsFor, accountLabel } from './render.js'
+import { resourceView, buttonsFor, accountLabel, intendedButton, offeredButtons } from './render.js'
 
 const $ = (id) => document.getElementById(id)
 const send = (msg) => browser.runtime.sendMessage(msg)
@@ -6,6 +6,12 @@ const send = (msg) => browser.runtime.sendMessage(msg)
 let tabId
 let resource = null
 let composeAction = null
+// Set when the popup was opened for a fediverse link: it then shows and acts
+// on the link's target instead of the tab's page. `intended` is what the link
+// asked for: only that button is offered, and the click on it is the
+// confirmation.
+const link = new URLSearchParams(location.search).get('link') || undefined
+let intended
 
 function setStatus (text, error) {
   const footer = $('status')
@@ -45,10 +51,12 @@ async function loadAccounts () {
 function renderButtons (state) {
   const wrap = $('buttons')
   wrap.innerHTML = ''
-  for (const b of buttonsFor(resource, state)) {
+  // Never focused: a key pressed while the popup opens must not run an action.
+  for (const b of offeredButtons(buttonsFor(resource, state), intended)) {
     const btn = document.createElement('button')
     btn.textContent = b.label
     btn.classList.toggle('active', b.active)
+    btn.disabled = Boolean(b.disabled)
     btn.addEventListener('click', () => {
       if (b.name === 'reply' || b.name === 'mention') { openCompose(b.name); return }
       runAction(b.name).catch((e) => fail({ message: e.message }))
@@ -58,10 +66,12 @@ function renderButtons (state) {
 }
 
 async function loadResource () {
-  const res = await send({ type: 'tab:resource', tabId })
-  resource = res.resource
+  const res = await send(link ? { type: 'link:open', link } : { type: 'tab:resource', tabId })
+  resource = res.resource || null
+  intended = res.action
   $('resource').hidden = !resource
   $('empty').hidden = Boolean(resource)
+  if (res.error) fail(res.error)
   if (!resource) return
   const view = resourceView(resource)
   $('kind').textContent = view.kind
@@ -69,7 +79,7 @@ async function loadResource () {
   if (view.link) $('title').href = view.link
   else $('title').removeAttribute('href')
   $('subtitle').textContent = view.subtitle
-  const st = await send({ type: 'action:state', tabId })
+  const st = await send({ type: 'action:state', tabId, link })
   if (st.error) {
     $('buttons').innerHTML = ''
     if (st.error.step === 'account') {
@@ -81,11 +91,13 @@ async function loadResource () {
     return
   }
   renderButtons(st.state)
+  if (intendedButton(buttonsFor(resource, st.state), intended) === 'reply') openCompose('reply')
 }
 
 async function runAction (name, text) {
+  intended = undefined
   setStatus('Working…')
-  const res = await send({ type: 'action:run', tabId, name, text })
+  const res = await send({ type: 'action:run', tabId, link, name, text })
   if (res.error) return fail(res.error)
   renderButtons(res.state)
   setStatus(res.activityId ? `Done: ${res.activityId}` : 'Done')
@@ -148,6 +160,8 @@ $('copy').addEventListener('click', async () => {
 })
 
 ;(async () => {
+  // Never inside a frame: a page that embeds this could cover the buttons.
+  if (window.top !== window) return
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true })
   tabId = tab.id
   await loadAccounts()

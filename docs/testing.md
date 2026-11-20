@@ -23,10 +23,26 @@ call in `src/background.js` while testing over http).
 - [ ] Navigate inside a Mastodon web UI (SPA, no full page load) to a profile or another status → icon colour and card follow the new URL without a reload.
 - [ ] With an account whose actor has `endpoints.proxyUrl`: the page URL is never `POST`ed to the proxy (check the network log); only `<link>`/header candidates are.
 
+## Fediverse links
+Serve `docs/test-links.md` as a page with clickable links (GitHub removes the `href` of unknown schemes, so the rendered file there does not work).
+- [ ] Logged in: click a `web+ap://` link → the toolbar popup opens over the page with the target's card, all buttons; the page does not navigate.
+- [ ] Close it and click the toolbar icon → the popup shows the page's own object again, not the link's.
+- [ ] Click a `web+follow:` / `?intent=follow` link → only **Follow** is offered, not focused; pressing Enter or Space does nothing; a click follows.
+- [ ] Click a `web+like:` link for a post that is already liked → **Unlike** shows, all buttons show.
+- [ ] Click an `intent=create` link → compose box is open; Send creates the reply to the link's target.
+- [ ] Click an `intent=block` link → the card opens, all buttons show.
+- [ ] Click an `acct:` and a `fedi://user@host/` link → popup with the actor card.
+- [ ] Logged out (reload the page first): click an `acct:` link → FediFox does not react; click a `web+…` link → Firefox opens the popup as a page with the card and the login form.
+- [ ] Log in while a page with links is open → the links are taken over without a reload.
+- [ ] Paste a `web+follow:…` link into the address bar → the popup opens as a page, only **Follow**.
+- [ ] On a Firefox before 149: a clicked link opens the popup as a page instead of over the page.
+
 ## Actions (each: check the WP admin / the target's collections)
 - [ ] Like → appears in `…/liked`; button turns to Unlike; Unlike → removed.
 - [ ] Share → Announce visible in outbox; Unshare → Undo in outbox.
 - [ ] Follow author → appears in `…/following`; Unfollow → removed.
+- [ ] In a fresh profile, open an actor that the account already follows → Unfollow works (the `Undo` embeds the `Follow`).
+- [ ] In a fresh profile, open a post the account already liked → a disabled "Liked" button, no Unlike.
 - [ ] Reply → Create/Note with `inReplyTo` and Mention tag in outbox.
 - [ ] Mention actor → Create/Note addressed to the actor.
 - [ ] Copy fediverse link → clipboard holds the AP `id`.
