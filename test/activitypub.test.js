@@ -39,6 +39,24 @@ test('bearer goes to own-origin URLs (collection walk), the outbox and the proxy
   assert.equal(calls[4].headers.get('authorization'), 'Bearer tok')
 })
 
+// The proxy answers from the server's cache of remote objects. The account's
+// own collections must be read live, or an action that was just undone still
+// looks done.
+test('own-origin documents are read directly, not through the proxy', async () => {
+  const proxied = { ...account, proxyUrl: 'https://x.test/proxy' }
+  const { fetch, calls } = createFetchStub({
+    'GET https://x.test/a/following': { body: { type: 'OrderedCollection', first: 'https://x.test/a/following?page=1' } },
+    'GET https://x.test/a/following?page=1': { body: { type: 'OrderedCollectionPage', orderedItems: ['https://y.test/users/bob'] } },
+    'POST https://x.test/proxy': { body: { id: 'https://y.test/o', type: 'Note' } }
+  })
+  const client = createClient({ fetch })
+  assert.deepEqual(await client.containsId('https://x.test/a/following', 'https://y.test/users/bob', { account: proxied }), { found: true, complete: true })
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.url}`), ['GET https://x.test/a/following', 'GET https://x.test/a/following?page=1'])
+  assert.ok(calls.every((c) => c.headers.get('authorization') === 'Bearer tok'))
+  await client.fetchObject('https://y.test/o', { account: proxied })
+  assert.equal(calls[2].url, 'https://x.test/proxy')
+})
+
 test('fetchObject goes through proxyUrl when the account has one', async () => {
   const { fetch, calls } = createFetchStub({ 'POST https://x.test/proxy': { body: { id: 'https://y.test/o', type: 'Note' } } })
   const client = createClient({ fetch })
@@ -110,6 +128,36 @@ test('webfinger errors are FedifoxErrors', async () => {
   const client = createClient({ fetch })
   await assert.rejects(client.webfinger('nobody@y.test'), (e) => e.step === 'webfinger' && e.status === 404)
   await assert.rejects(client.webfinger('not-a-handle'), (e) => e.step === 'webfinger')
+})
+
+test('webfinger accepts an acct: URI', async () => {
+  const { fetch } = createFetchStub({
+    'GET https://y.test/.well-known/webfinger?resource=acct%3Abob%40y.test': { body: { links: [{ rel: 'self', type: 'application/activity+json', href: 'https://y.test/users/bob' }] }, headers: { 'content-type': 'application/jrd+json' } }
+  })
+  const client = createClient({ fetch })
+  assert.equal(await client.webfinger('acct:bob@y.test'), 'https://y.test/users/bob')
+  assert.equal(await client.webfinger('ACCT:bob@y.test'), 'https://y.test/users/bob')
+})
+
+// The handle can come from a link in a web page, so the lookup must stay a
+// WebFinger request to a host and its answer must be a web address.
+test('webfinger only requests the well-known path of a host', async () => {
+  const { fetch, calls } = createFetchStub({})
+  const client = createClient({ fetch })
+  for (const handle of ['bob@y.test/admin?x=', 'bob@y.test?x=', 'bob@y.test#', 'bob@y.test\\@z.test']) {
+    await assert.rejects(client.webfinger(handle), (e) => e.step === 'webfinger', handle)
+  }
+  assert.equal(calls.length, 0)
+})
+
+test('webfinger rejects an actor link that is not a web URL', async () => {
+  for (const href of ['javascript:alert(1)', 'data:text/html,x', 'file:///etc/passwd', 'moz-extension://x/y', '//y.test/users/bob', '/users/bob']) {
+    const { fetch } = createFetchStub({
+      'GET https://y.test/.well-known/webfinger?resource=acct%3Abob%40y.test': { body: { links: [{ rel: 'self', type: 'application/activity+json', href }] }, headers: { 'content-type': 'application/jrd+json' } }
+    })
+    const client = createClient({ fetch })
+    await assert.rejects(client.webfinger('bob@y.test'), (e) => e.step === 'webfinger' && /no ActivityPub actor/.test(e.message), href)
+  }
 })
 
 test('network failures become FedifoxErrors naming the host', async () => {

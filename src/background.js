@@ -20,7 +20,7 @@ const client = createClient({
 })
 const resolver = createResolver({ client, store })
 const actions = createActions({ client, store })
-const router = createRouter({ store, session, resolver, actions, browser })
+const router = createRouter({ store, session, resolver, actions, client, browser })
 
 browser.runtime.onMessage.addListener((message, sender) => router.handle(message, sender))
 

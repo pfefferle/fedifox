@@ -50,8 +50,10 @@ export function follow (actorId) {
   return addressed({ '@context': AS2_CONTEXT, type: 'Follow', object: actorId }, { to: [actorId] })
 }
 
-export function undo (activityId, addressing) {
-  return addressed({ '@context': AS2_CONTEXT, type: 'Undo', object: activityId }, addressing)
+// `activity` is the id of the activity to undo, or the activity itself when
+// its id is not known.
+export function undo (activity, addressing) {
+  return addressed({ '@context': AS2_CONTEXT, type: 'Undo', object: activity }, addressing)
 }
 
 export function createNote ({ content, inReplyTo, mentions = [], to = [], cc = [] }) {

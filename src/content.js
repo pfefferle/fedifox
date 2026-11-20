@@ -33,3 +33,29 @@ browser.runtime.onMessage.addListener((message) => {
 })
 
 discover().catch((e) => console.warn('fedifox: discovery failed', e))
+
+// A click on a fediverse link is passed to the background, which opens the
+// popup over this page, so the page is not left — but only while an account
+// is connected; without one the links are left to Firefox. The answer is
+// kept, because a click has to be cancelled synchronously.
+const LINKS = ['web+ap', 'web+activitypub', 'web+follow', 'web+like', 'web+share', 'acct', 'fedi']
+  .map((scheme) => `a[href^="${scheme}:" i]`).join(', ')
+let hooked = false
+const askHooked = () => browser.runtime.sendMessage({ type: 'link:hooked' })
+  .then((res) => { hooked = Boolean(res?.hooked) })
+  .catch(() => { hooked = false })
+askHooked()
+browser.storage.onChanged.addListener((changes) => {
+  if (changes.accounts || changes.selectedActorId) askHooked()
+})
+
+// Clicks made by script are ignored, and so are clicks the page handled itself.
+document.addEventListener('click', (e) => {
+  if (!hooked || !e.isTrusted || e.defaultPrevented) return
+  const link = e.target.closest?.(LINKS)
+  if (!link) return
+  e.preventDefault()
+  browser.runtime.sendMessage({ type: 'link:clicked', link: link.getAttribute('href') })
+    .then((res) => { if (res?.error) console.warn('fedifox: cannot open link', res.error.message) })
+    .catch((err) => console.debug('fedifox: could not reach background', err?.message))
+})
