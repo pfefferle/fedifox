@@ -97,3 +97,30 @@ test('hasApi tells a logged-in account from one that only has intents', () => {
   assert.equal(hasApi({ actorId: 'https://x.test/a', intents: all }), false)
   assert.equal(hasApi(null), false)
 })
+
+const mastodon = {
+  links: [
+    { rel: 'self', type: 'application/activity+json', href: 'https://m.test/users/a' },
+    { rel: 'http://ostatus.org/schema/1.0/subscribe', template: 'https://m.test/authorize_interaction?uri={uri}' },
+    { rel: `${REL}Create`, template: 'https://m.test/share?text={content}' },
+    { rel: `${REL}Object`, template: 'https://m.test/authorize_interaction?uri={object}' }
+  ]
+}
+
+test('the oStatus subscribe link stands in for a Follow intent the server does not list', () => {
+  assert.deepEqual(intentTemplates(mastodon), { Follow: 'https://m.test/authorize_interaction?uri={object}', Create: 'https://m.test/share?text={content}', Object: 'https://m.test/authorize_interaction?uri={object}' })
+  // Whatever the order, a listed Follow intent wins.
+  const follow = { rel: `${REL}Follow`, template: all.Follow }
+  assert.equal(intentTemplates({ links: [follow, ...mastodon.links] }).Follow, all.Follow)
+  assert.equal(intentTemplates({ links: [...mastodon.links, follow] }).Follow, all.Follow)
+  assert.deepEqual(intentTemplates({ links: [{ rel: 'http://ostatus.org/schema/1.0/subscribe', template: 'javascript:alert({uri})' }] }), {})
+})
+
+test('what a server only lets you open is offered as that', () => {
+  const intents = intentTemplates(mastodon)
+  assert.deepEqual(intentLinks(note, intents).map((l) => [l.name, l.label, l.href]), [
+    ['followAuthor', 'Follow @bob@y.test', 'https://m.test/authorize_interaction?uri=https%3A%2F%2Fy.test%2Fusers%2Fbob'],
+    ['open', 'Open', 'https://m.test/authorize_interaction?uri=https%3A%2F%2Fy.test%2Fposts%2F1']
+  ])
+  assert.deepEqual(intentLinks(bob, intents).map((l) => l.name), ['follow', 'mention', 'open'])
+})

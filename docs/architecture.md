@@ -242,16 +242,22 @@ hands the action to that server, where the user is logged in and confirms.
 
 - **Connecting.** `login` reads the templates from WebFinger (for an actor
   URL: from the WebFinger of the actor's handle, best effort) and stores them
-  as `account.intents`. When the actor has no `outbox` or no OAuth endpoint
-  can be found, and there is at least one template, the account is stored
-  without tokens. `hasApi(account)` (an access token) tells the two apart.
+  as `account.intents`. When the login to the API does not work out (no
+  `outbox`, no OAuth endpoint, a refused client registration or token
+  exchange) and there is at least one template, the account is stored
+  without tokens. That also holds when the actor document itself cannot be
+  read (mastodon.social answers 401 to an unsigned request): the account
+  then has the handle and the actor address WebFinger gave. A cancelled
+  authorization window stays an error. `hasApi(account)` (an access token) tells the two apart.
   Templates are read once, when the account is connected.
 - **Templates** must be http(s) and are filled by `intentUrl()`: `{name}`
   becomes the percent-encoded value, everything else becomes empty, and the
   result has to stay on the template's origin.
+  The oStatus `subscribe` link (`{uri}`) stands in for `Follow` when the
+  server lists none (Mastodon).
 - **Links.** `intentLinks(resource, account.intents)` offers Like, Share
-  (`Announce`), Reply and Mention (`Create`), Follow, Report (`Flag`) and
-  Block, each only when the server publishes it and the template has a place
+  (`Announce`), Reply and Mention (`Create`), Follow, Report (`Flag`), Block
+  and Open (`Object`), each only when the server publishes it and the template has a place
   for what the action is about (`{object}`, `{inReplyTo}`, `{content}`).
 - **Popup.** Buttons act through the API, links open on the server. The
   links are a list below the buttons, in a new tab. An account without the

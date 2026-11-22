@@ -43,6 +43,7 @@ Serve `docs/test-links.md` as a page with clickable links (GitHub removes the `h
 - [ ] With that as the only account: click a `web+follow:` link → the tab goes straight to the server's follow page. Add a second account → the popup opens instead, with the one link and Cancel below it.
 - [ ] Log in to a server with the API and intents → buttons, and the list of links below them.
 - [ ] A server with neither → the login error as before.
+- [ ] Connect a mastodon.social account → connected without a login; on a post "Follow @author" and "Open", on a profile also "Mention".
 
 ## Actions (each: check the WP admin / the target's collections)
 - [ ] Like → appears in `…/liked`; button turns to Unlike; Unlike → removed.

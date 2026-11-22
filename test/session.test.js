@@ -274,3 +274,56 @@ test('a server with neither the API nor intents is still refused', async () => {
   await assert.rejects(session.login({ input: 'https://x.test/users/alice' }), (e) => e.step === 'login' && /no outbox/.test(e.message))
   assert.deepEqual(await store.getAccounts(), [])
 })
+
+test('an API login that the server refuses falls back to the intents', async () => {
+  const refusals = {
+    'the client registration': (stub) => { stub.routes['POST https://x.test/oauth/clients'] = json({ error: 'unauthorized' }, 401) },
+    'no way to register': (stub) => { stub.routes['GET https://x.test/.well-known/oauth-authorization-server'] = json({ issuer: 'https://x.test', authorization_endpoint: 'https://x.test/oauth/authorize', token_endpoint: 'https://x.test/oauth/token' }) },
+    'the token exchange': (stub) => { stub.routes['POST https://x.test/oauth/token'] = json({ error: 'invalid_client' }, 401) }
+  }
+  for (const [what, refuse] of Object.entries(refusals)) {
+    const browser = makeBrowser((url) => `${redirectUri}?code=abc&state=${url.searchParams.get('state')}`)
+    const withOnes = setup()
+    withIntents(withOnes.stub)
+    refuse(withOnes.stub)
+    const account = await createSession({ store: withOnes.store, client: withOnes.client, browser, fetch: withOnes.stub.fetch, oauth, now: () => 5000 }).login({ input: 'alice@x.test' })
+    assert.deepEqual(account, { actorId: actor.id, handle: 'alice@x.test', name: 'Alice', intents, needsReauth: false }, what)
+    assert.deepEqual(await withOnes.store.getSelectedAccount(), account, what)
+    // Without intents the refusal is the answer, as before.
+    const without = setup()
+    refuse(without.stub)
+    await assert.rejects(createSession({ store: without.store, client: without.client, browser, fetch: without.stub.fetch, oauth, now: () => 5000 }).login({ input: 'alice@x.test' }), (e) => e.name === 'FedifoxError', what)
+    assert.deepEqual(await without.store.getAccounts(), [], what)
+  }
+})
+
+test('cancelling the authorization does not connect the account another way', async () => {
+  const { store, stub, client } = setup()
+  withIntents(stub)
+  const browser = makeBrowser(() => { throw new Error('User cancelled or denied access.') })
+  const session = createSession({ store, client, browser, fetch: stub.fetch, oauth, now: () => 5000 })
+  await assert.rejects(session.login({ input: 'alice@x.test' }), (e) => e.step === 'authorize')
+  assert.deepEqual(await store.getAccounts(), [])
+})
+
+test('an actor document that cannot be read still connects through the intents of its handle', async () => {
+  // A server in authorized-fetch mode answers 401 to an unsigned request.
+  const locked = (stub) => { stub.routes['GET https://x.test/users/alice'] = { status: 401, body: '' } }
+  for (const input of ['alice@x.test', '@alice@x.test', 'acct:alice@x.test']) {
+    const { store, stub, client } = setup()
+    withIntents(stub)
+    locked(stub)
+    const account = await createSession({ store, client, browser: makeBrowser(noAuth), fetch: stub.fetch, oauth, now: () => 5000 }).login({ input })
+    assert.deepEqual(account, { actorId: actor.id, handle: 'alice@x.test', name: 'alice@x.test', intents, needsReauth: false }, input)
+    assert.deepEqual(await store.getSelectedAccount(), account, input)
+  }
+  // Nothing to fall back to: no intents, or an actor URL, which names no handle.
+  const none = setup()
+  locked(none.stub)
+  await assert.rejects(createSession({ store: none.store, client: none.client, browser: makeBrowser(noAuth), fetch: none.stub.fetch, oauth, now: () => 5000 }).login({ input: 'alice@x.test' }), (e) => e.step === 'fetch-object' && e.status === 401)
+  const byUrl = setup()
+  withIntents(byUrl.stub)
+  locked(byUrl.stub)
+  await assert.rejects(createSession({ store: byUrl.store, client: byUrl.client, browser: makeBrowser(noAuth), fetch: byUrl.stub.fetch, oauth, now: () => 5000 }).login({ input: 'https://x.test/users/alice' }), (e) => e.step === 'fetch-object' && e.status === 401)
+  assert.deepEqual([...await none.store.getAccounts(), ...await byUrl.store.getAccounts()], [])
+})

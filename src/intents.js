@@ -2,6 +2,9 @@
 // its own pages for an activity. Opening one hands the action to that server,
 // where the user is logged in and confirms it.
 const REL = 'https://w3id.org/fep/3b86/'
+// The older way to say where an account can be followed from; its template
+// names the actor `{uri}`.
+const SUBSCRIBE = 'http://ostatus.org/schema/1.0/subscribe'
 
 // Only a login gives an account the ActivityPub API; without one it can still
 // have intents.
@@ -17,7 +20,11 @@ const webUrl = (value) => {
 // → { Follow: template, … } from a WebFinger document.
 export function intentTemplates (jrd) {
   const out = {}
-  for (const link of jrd?.links || []) {
+  const links = jrd?.links || []
+  // First, so that a Follow intent the server lists replaces it.
+  const subscribe = links.find((l) => l?.rel === SUBSCRIBE && typeof l.template === 'string' && webUrl(l.template))
+  if (subscribe) out.Follow = subscribe.template.replaceAll('{uri}', '{object}')
+  for (const link of links) {
     if (typeof link?.rel !== 'string' || !link.rel.startsWith(REL)) continue
     const name = link.rel.slice(REL.length)
     if (!/^[A-Z][A-Za-z]*$/.test(name) || typeof link.template !== 'string' || !webUrl(link.template)) continue
@@ -45,7 +52,8 @@ function candidates (resource) {
       ['follow', 'Follow', 'Follow', { object: resource.id }],
       resource.handle && ['mention', 'Create', 'Mention', { content: `@${resource.handle} ` }],
       ['report', 'Flag', 'Report', { object: resource.id }],
-      ['block', 'Block', 'Block', { object: resource.id }]
+      ['block', 'Block', 'Block', { object: resource.id }],
+      ['open', 'Object', 'Open', { object: resource.id }]
     ]
   }
   const author = resource.attributedTo?.id ? resource.attributedTo : null
@@ -55,7 +63,8 @@ function candidates (resource) {
     ['reply', 'Create', 'Reply', { inReplyTo: resource.id }],
     author && ['followAuthor', 'Follow', `Follow ${who(author)}`, { object: author.id }],
     ['report', 'Flag', 'Report', { object: resource.id }],
-    author && ['blockAuthor', 'Block', `Block ${who(author)}`, { object: author.id }]
+    author && ['blockAuthor', 'Block', `Block ${who(author)}`, { object: author.id }],
+    ['open', 'Object', 'Open', { object: resource.id }]
   ]
 }
 
