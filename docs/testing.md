@@ -34,7 +34,7 @@ Serve `docs/test-links.md` as a page with clickable links (GitHub removes the `h
 - [ ] Click an `acct:` and a `fedi://user@host/` link → popup with the actor card.
 - [ ] Logged out (reload the page first): click an `acct:` link → FediFox does not react; click a `web+…` link → Firefox opens the popup as a page with the card and the login form.
 - [ ] Log in while a page with links is open → the links are taken over without a reload.
-- [ ] Paste a `web+follow:…` link into the address bar → the popup opens as a page, only **Follow**.
+- [ ] Paste a `web+follow:…` link into the address bar → the popup opens as a page and asks "Follow …?", with only **Follow** and **Cancel**; Cancel goes back without following.
 - [ ] On a Firefox before 149: a clicked link opens the popup as a page instead of over the page.
 
 ## Actions (each: check the WP admin / the target's collections)

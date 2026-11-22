@@ -223,8 +223,8 @@ Only `follow`, `like`, `announce` (share) and `create` (reply) become an
 action; every other activity is dropped and the link only opens its target.
 
 A link is written by a third party, so nothing runs on its own. For a link
-that names an action the popup offers only that one button, and the user's
-click on it is the confirmation. The button is not focused. When the action is
+that names an action the popup asks about it and offers only that one button
+next to Cancel, and the user's click on it is the confirmation. The button is not focused. When the action is
 already done all buttons are shown instead (a link never undoes), and the
 popup does nothing when it is loaded inside a frame.
 

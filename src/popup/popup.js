@@ -1,4 +1,4 @@
-import { resourceView, buttonsFor, accountLabel, intendedButton, offeredButtons } from './render.js'
+import { resourceView, buttonsFor, accountLabel, intendedButton, offeredButtons, confirmTitle, doneMessage } from './render.js'
 
 const $ = (id) => document.getElementById(id)
 const send = (msg) => browser.runtime.sendMessage(msg)
@@ -13,12 +13,12 @@ let composeAction = null
 const link = new URLSearchParams(location.search).get('link') || undefined
 let intended
 
-function setStatus (text, error) {
+function setStatus (text, error, detail = '') {
   const footer = $('status')
   footer.hidden = !text
   footer.classList.toggle('error', Boolean(error))
   $('status-text').textContent = text || ''
-  const detail = error ? [error.step, error.status, error.detail].filter(Boolean).join(' · ') : ''
+  if (error) detail = [error.step, error.status, error.detail].filter(Boolean).join(' · ')
   $('status-details').hidden = !detail
   $('status-pre').textContent = detail
 }
@@ -51,17 +51,33 @@ async function loadAccounts () {
 function renderButtons (state) {
   const wrap = $('buttons')
   wrap.innerHTML = ''
+  const all = buttonsFor(resource, state)
+  // Opened for one action: the headline asks, and the only other button
+  // leaves without doing anything.
+  const asked = intendedButton(all, intended)
+  $('title').textContent = asked ? confirmTitle(resource, asked) : resourceView(resource).title
+  wrap.classList.toggle('confirm', Boolean(asked))
   // Never focused: a key pressed while the popup opens must not run an action.
-  for (const b of offeredButtons(buttonsFor(resource, state), intended)) {
+  for (const b of offeredButtons(all, intended)) {
     const btn = document.createElement('button')
     btn.textContent = b.label
+    btn.title = b.label
+    btn.dataset.name = b.name
     btn.classList.toggle('active', b.active)
+    btn.classList.toggle('primary', b.name === asked)
     btn.disabled = Boolean(b.disabled)
     btn.addEventListener('click', () => {
       if (b.name === 'reply' || b.name === 'mention') { openCompose(b.name); return }
       runAction(b.name).catch((e) => fail({ message: e.message }))
     })
     wrap.append(btn)
+  }
+  if (asked) {
+    const cancel = document.createElement('button')
+    cancel.textContent = 'Cancel'
+    // As a page the popup took the place of the page the link was on.
+    cancel.addEventListener('click', () => { if (window.history.length > 1) window.history.back(); else window.close() })
+    wrap.append(cancel)
   }
 }
 
@@ -74,7 +90,6 @@ async function loadResource () {
   if (res.error) fail(res.error)
   if (!resource) return
   const view = resourceView(resource)
-  $('kind').textContent = view.kind
   $('title').textContent = view.title
   if (view.link) $('title').href = view.link
   else $('title').removeAttribute('href')
@@ -100,7 +115,7 @@ async function runAction (name, text) {
   const res = await send({ type: 'action:run', tabId, link, name, text })
   if (res.error) return fail(res.error)
   renderButtons(res.state)
-  setStatus(res.activityId ? `Done: ${res.activityId}` : 'Done')
+  setStatus(doneMessage(name), null, res.activityId)
 }
 
 function openCompose (name) {
