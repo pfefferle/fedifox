@@ -61,6 +61,34 @@ export function offeredButtons (buttons, action) {
   return name ? buttons.filter((b) => b.name === name) : buttons
 }
 
+// The headline of a popup that was opened for one action: it asks about that
+// action, and the click on the button is the answer.
+export function confirmTitle (resource, name) {
+  const view = resourceView(resource)
+  const author = resource.attributedTo
+  const who = author?.handle ? `@${author.handle}` : author?.name
+  const noun = resource.kind === 'actor' ? '' : `this ${(resource.type || 'post').toLowerCase()}`
+  const what = resource.name ? `“${resource.name}”` : noun
+  if (name === 'follow') return `Follow ${view.title}?`
+  if (name === 'followAuthor') return `Follow ${who}?`
+  if (name === 'reply') return `Reply to ${who || noun}`
+  return `${name === 'share' ? 'Share' : 'Like'} ${what}?`
+}
+
+const DONE = {
+  like: 'Liked',
+  undoLike: 'Like removed',
+  share: 'Shared',
+  undoShare: 'Share removed',
+  follow: 'Following',
+  undoFollow: 'Unfollowed',
+  followAuthor: 'Following',
+  undoFollowAuthor: 'Unfollowed',
+  reply: 'Reply sent',
+  mention: 'Mention sent'
+}
+export const doneMessage = (name) => DONE[name] || 'Done'
+
 export function accountLabel (account) {
   return account.needsReauth ? `${account.handle} (login required)` : account.handle
 }

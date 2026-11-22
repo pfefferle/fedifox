@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { resourceView, buttonsFor, accountLabel, intendedButton, offeredButtons } from '../src/popup/render.js'
+import { resourceView, buttonsFor, accountLabel, intendedButton, offeredButtons, confirmTitle, doneMessage } from '../src/popup/render.js'
 
 const note = { id: 'https://y.test/posts/1', kind: 'object', type: 'Note', url: 'https://y.test/@bob/1', attributedTo: { id: 'https://y.test/users/bob', name: 'Bob', handle: 'bob@y.test' }, audience: { to: [], cc: [] } }
 const bob = { id: 'https://y.test/users/bob', kind: 'actor', type: 'Person', name: 'Bob', handle: 'bob@y.test', url: 'https://y.test/@bob', audience: { to: [], cc: [] } }
@@ -65,4 +65,26 @@ test('offeredButtons narrows to the one action a link asked for', () => {
   assert.deepEqual(offeredButtons(buttonsFor(bob, fresh), 'like'), buttonsFor(bob, fresh))
   const liked = buttonsFor(note, { ...fresh, liked: true, likeId: 'https://x.test/act/1' })
   assert.deepEqual(offeredButtons(liked, 'like'), liked)
+})
+
+test('confirmTitle asks about the one action a link wants', () => {
+  assert.equal(confirmTitle(note, 'like'), 'Like this note?')
+  assert.equal(confirmTitle({ ...note, type: 'Article' }, 'share'), 'Share this article?')
+  assert.equal(confirmTitle({ ...note, name: 'A title' }, 'like'), 'Like “A title”?')
+  assert.equal(confirmTitle({ ...note, type: undefined }, 'like'), 'Like this post?')
+  assert.equal(confirmTitle(note, 'followAuthor'), 'Follow @bob@y.test?')
+  assert.equal(confirmTitle({ ...note, attributedTo: { id: 'https://y.test/users/bob', name: 'Bob' } }, 'followAuthor'), 'Follow Bob?')
+  assert.equal(confirmTitle(bob, 'follow'), 'Follow Bob?')
+  assert.equal(confirmTitle(note, 'reply'), 'Reply to @bob@y.test')
+  assert.equal(confirmTitle({ ...note, attributedTo: undefined }, 'reply'), 'Reply to this note')
+})
+
+test('doneMessage has words for every action the popup can run', () => {
+  const off = { liked: false, shared: false, following: false, followingAuthor: false }
+  const on = { liked: true, likeId: 'https://x.test/act/1', shared: true, shareId: 'https://x.test/act/2', following: true, followingAuthor: true }
+  const names = [note, bob].flatMap((r) => [off, on].flatMap((state) => buttonsFor(r, state).map((b) => b.name)))
+  for (const name of new Set(names)) assert.notEqual(doneMessage(name), 'Done', name)
+  assert.equal(doneMessage('like'), 'Liked')
+  assert.equal(doneMessage('undoFollowAuthor'), 'Unfollowed')
+  assert.equal(doneMessage('somethingNew'), 'Done')
 })
