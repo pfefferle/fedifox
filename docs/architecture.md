@@ -64,7 +64,8 @@ the background is the only holder of state.
 ```
 Account        {actorId, handle, name, inbox, outbox, liked, following, followers,
                 proxyUrl?, asOrigin, accessToken, refreshToken?, expiresAt?,
-                needsReauth: bool}
+                intents: {Follow?: template, …}, needsReauth: bool}
+               without the API only {actorId, handle, name, intents, needsReauth}
 ClientCreds    keyed by asOrigin: {clientId, clientSecret?, source: 'cimd'|'dcr'|'manual'}
 Resource       {id, kind: 'actor'|'object', type, name?, summary?, handle?, url,
                 attributedTo?: {id, name?, handle?}, audience: {to[], cc[]}}
@@ -231,6 +232,38 @@ popup does nothing when it is loaded inside a frame.
 `docs/test-links.md` lists every link form with its expected result.
 
 
+## Activity Intents
+
+FEP-3b86: a server lists, in the WebFinger document of an account, URI
+templates of its own pages for an activity (`rel`
+`https://w3id.org/fep/3b86/Follow`, `template`
+`https://host/authorize_interaction?uri={object}`). Opening a filled template
+hands the action to that server, where the user is logged in and confirms.
+
+- **Connecting.** `login` reads the templates from WebFinger (for an actor
+  URL: from the WebFinger of the actor's handle, best effort) and stores them
+  as `account.intents`. When the actor has no `outbox` or no OAuth endpoint
+  can be found, and there is at least one template, the account is stored
+  without tokens. `hasApi(account)` (an access token) tells the two apart.
+  Templates are read once, when the account is connected.
+- **Templates** must be http(s) and are filled by `intentUrl()`: `{name}`
+  becomes the percent-encoded value, everything else becomes empty, and the
+  result has to stay on the template's origin.
+- **Links.** `intentLinks(resource, account.intents)` offers Like, Share
+  (`Announce`), Reply and Mention (`Create`), Follow, Report (`Flag`) and
+  Block, each only when the server publishes it and the template has a place
+  for what the action is about (`{object}`, `{inReplyTo}`, `{content}`).
+- **Popup.** Buttons act through the API, links open on the server. The
+  links are a list below the buttons, in a new tab. An account without the
+  API has no buttons; one with both has both.
+- **Without the API** the bearer is never sent (`bearerAllowed`), and
+  `action:state` and `action:run` answer with an `account` error. With exactly
+  one connected account, and that one without the API, a clicked link that
+  names an action goes straight to the server's page instead of the popup.
+
+Not done: catching a site's own navigation to an intent page, and
+`on-success` / `on-cancel`.
+
 ## Actions
 
 Every action is an AS2 activity `POST`ed to the account's `outbox` with
@@ -311,6 +344,7 @@ Numbers refer to issues in the SWF repo.
 | `src/discovery/html.js` | pure candidate extraction from `<link>`/`<a>` data |
 | `src/discovery/resolver.js` | Link-header parsing, candidate ordering, fetch + classify → `Resource` |
 | `src/link.js` | pure `parseLink()` — fediverse link → address + action |
+| `src/intents.js` | pure FEP-3b86 helpers — WebFinger → templates, template → URL, resource → links |
 | `src/actions.js` | `createActions()` — state checks and user actions with ActionRecords |
 | `src/messages.js` | `createRouter()` — message router wiring background state to popup/content requests |
 | `src/content.js` | DOM → `page:discovered` message; click take-over for fediverse links |

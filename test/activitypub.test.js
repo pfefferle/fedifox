@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createClient } from '../src/client/activitypub.js'
+import { createClient, bearerAllowed } from '../src/client/activitypub.js'
 import { createFetchStub } from './helpers/fetch-stub.js'
 
 const account = { actorId: 'https://x.test/a', outbox: 'https://x.test/a/outbox', liked: 'https://x.test/a/liked', accessToken: 'tok' }
@@ -207,4 +207,21 @@ test('a second 401 after the refresh is a FedifoxError with status 401; no refre
   const plain = createClient({ fetch })
   await assert.rejects(plain.fetchObject('https://x.test/a/liked', { account }), (e) => e.status === 401)
   assert.equal(calls.length, 5)
+})
+
+test('webfingerAccount also returns the intents the server publishes', async () => {
+  const { fetch } = createFetchStub({
+    'GET https://y.test/.well-known/webfinger?resource=acct%3Abob%40y.test': { body: { links: [{ rel: 'self', type: 'application/activity+json', href: 'https://y.test/users/bob' }, { rel: 'https://w3id.org/fep/3b86/Follow', template: 'https://y.test/authorize_interaction?uri={object}' }] }, headers: { 'content-type': 'application/jrd+json' } }
+  })
+  const client = createClient({ fetch })
+  assert.deepEqual(await client.webfingerAccount('bob@y.test'), { actorUrl: 'https://y.test/users/bob', intents: { Follow: 'https://y.test/authorize_interaction?uri={object}' } })
+  assert.equal(await client.webfinger('bob@y.test'), 'https://y.test/users/bob')
+})
+
+test('an account without a login never gets an Authorization header', async () => {
+  const connected = { actorId: 'https://x.test/a', handle: 'a@x.test', intents: { Like: 'https://x.test/intents/like?id={object}' } }
+  assert.equal(bearerAllowed(connected, 'https://x.test/a/liked'), false)
+  const { fetch, calls } = createFetchStub({ 'GET https://x.test/a/liked': { body: { type: 'OrderedCollection', orderedItems: [] } } })
+  await createClient({ fetch }).fetchObject('https://x.test/a/liked', { account: connected })
+  assert.equal(calls[0].headers.has('authorization'), false)
 })

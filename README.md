@@ -17,6 +17,11 @@ It also reacts to fediverse links (`web+ap:`, `web+activitypub:`,
 logged in, a click opens the popup over the page you are on. See
 [docs/test-links.md](docs/test-links.md) for every supported form.
 
+A server without the ActivityPub API can still be connected when it publishes
+[Activity Intents](https://w3id.org/fep/3b86) (FEP-3b86) in WebFinger: FediFox
+then lists links that open the action on that server. An account that has
+both gets the buttons and the links.
+
 ## Requirements on the server
 
 - An actor with `outbox`, `liked`, `following`, `followers`.

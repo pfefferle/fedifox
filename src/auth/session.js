@@ -54,11 +54,27 @@ export function createSession ({ store, client, browser, fetch = globalThis.fetc
   async function login ({ input, manual } = {}) {
     const trimmed = (input || '').trim()
     if (!trimmed) throw new FedifoxError('Enter a handle like user@example.org or an actor URL', { step: 'login' })
-    const actorUrl = /^https?:\/\//.test(trimmed) ? trimmed : await client.webfinger(trimmed)
+    const byUrl = /^https?:\/\//.test(trimmed)
+    const found = byUrl ? { actorUrl: trimmed } : await client.webfingerAccount(trimmed)
+    const actorUrl = found.actorUrl
     const actor = await client.fetchObject(actorUrl)
-    if (!actor.outbox) throw new FedifoxError(`${hostOf(actorUrl)} actor has no outbox — the server does not support the ActivityPub API`, { step: 'login', detail: actorUrl })
+    const { actorId, handle, name } = accountFromActor(actor, {}, {})
+    // An actor URL says nothing about intents; WebFinger does, when it answers.
+    const intents = byUrl ? await client.webfingerAccount(handle).then((res) => res.intents, () => ({})) : found.intents
 
-    const as = await discoverEndpoints(actor, { fetch })
+    let as
+    try {
+      if (!actor.outbox) throw new FedifoxError(`${hostOf(actorUrl)} actor has no outbox — the server does not support the ActivityPub API`, { step: 'login', detail: actorUrl })
+      as = await discoverEndpoints(actor, { fetch })
+    } catch (e) {
+      // No API to log in to, but the server lists its own pages for actions:
+      // the account is connected as it is, and actions open there.
+      if (!Object.keys(intents).length) throw e
+      const account = { actorId, handle, name, intents, needsReauth: false }
+      await store.saveAccount(account)
+      await store.setSelectedActorId(account.actorId)
+      return account
+    }
     const redirectUri = browser.identity.getRedirectURL()
     const creds = await resolveClientCreds({ as, store, redirectUri, manual, fetch })
 
@@ -90,7 +106,7 @@ export function createSession ({ store, client, browser, fetch = globalThis.fetc
       throw new FedifoxError(`${hostOf(as.token_endpoint)} refused the token exchange`, { step: 'token', status: response?.status, detail: cause?.message, cause })
     }
 
-    const account = accountFromActor(actor, tokens, { asOrigin: as.issuer, now: now() })
+    const account = { ...accountFromActor(actor, tokens, { asOrigin: as.issuer, now: now() }), intents }
     await store.saveAccount(account)
     await store.setSelectedActorId(account.actorId)
     return account

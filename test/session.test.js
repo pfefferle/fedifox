@@ -225,3 +225,52 @@ test('logout revokes best-effort and removes the account', async () => {
   assert.equal(await store.getAccount(actor.id), null)
   assert.ok(stub.calls.some((c) => c.url === 'https://x.test/oauth/revoke'))
 })
+
+const intentLinks = [{ rel: 'https://w3id.org/fep/3b86/Follow', template: 'https://x.test/authorize_interaction?uri={object}' }, { rel: 'https://w3id.org/fep/3b86/Like', template: 'https://x.test/intents/like?id={object}' }]
+const intents = { Follow: 'https://x.test/authorize_interaction?uri={object}', Like: 'https://x.test/intents/like?id={object}' }
+const withIntents = (stub) => { stub.routes['GET https://x.test/.well-known/webfinger?resource=acct%3Aalice%40x.test'].body.links.push(...intentLinks) }
+const noAuth = () => { throw new Error('the authorization window must not open') }
+
+test('a login keeps the intents the server publishes next to the tokens', async () => {
+  for (const input of ['alice@x.test', 'https://x.test/users/alice']) {
+    const { store, stub, client } = setup()
+    withIntents(stub)
+    const browser = makeBrowser((url) => `${redirectUri}?code=abc&state=${url.searchParams.get('state')}`)
+    const account = await createSession({ store, client, browser, fetch: stub.fetch, oauth, now: () => 5000 }).login({ input })
+    assert.equal(account.accessToken, 'at-1', input)
+    assert.deepEqual(account.intents, intents, input)
+    assert.deepEqual((await store.getSelectedAccount()).intents, intents, input)
+  }
+})
+
+test('a login without published intents stores none', async () => {
+  const { store, stub, client } = setup()
+  const browser = makeBrowser((url) => `${redirectUri}?code=abc&state=${url.searchParams.get('state')}`)
+  const account = await createSession({ store, client, browser, fetch: stub.fetch, oauth, now: () => 5000 }).login({ input: 'alice@x.test' })
+  assert.deepEqual(account.intents, {})
+})
+
+test('a server without the API but with intents is connected without a login', async () => {
+  // No outbox at all, and an outbox but nowhere to authorize (Mastodon).
+  const noOutbox = { ...actor, outbox: undefined }
+  const noOAuth = { ...actor, endpoints: {} }
+  for (const [served, input] of [[noOutbox, 'alice@x.test'], [noOAuth, 'alice@x.test'], [noOAuth, 'https://x.test/users/alice']]) {
+    const { store, stub, client } = setup()
+    withIntents(stub)
+    stub.routes['GET https://x.test/users/alice'] = { body: served }
+    stub.routes['GET https://x.test/.well-known/oauth-authorization-server'] = { status: 404, body: '' }
+    const account = await createSession({ store, client, browser: makeBrowser(noAuth), fetch: stub.fetch, oauth, now: () => 5000 }).login({ input })
+    assert.deepEqual(account, { actorId: actor.id, handle: 'alice@x.test', name: 'Alice', intents, needsReauth: false })
+    assert.deepEqual(await store.getSelectedAccount(), account)
+    assert.equal(stub.calls.some((c) => c.method === 'POST'), false)
+  }
+})
+
+test('a server with neither the API nor intents is still refused', async () => {
+  const { store, stub, client } = setup()
+  stub.routes['GET https://x.test/users/alice'] = { body: { ...actor, outbox: undefined } }
+  const session = createSession({ store, client, browser: makeBrowser(noAuth), fetch: stub.fetch, oauth, now: () => 5000 })
+  await assert.rejects(session.login({ input: 'alice@x.test' }), (e) => e.step === 'login' && /no outbox/.test(e.message))
+  await assert.rejects(session.login({ input: 'https://x.test/users/alice' }), (e) => e.step === 'login' && /no outbox/.test(e.message))
+  assert.deepEqual(await store.getAccounts(), [])
+})

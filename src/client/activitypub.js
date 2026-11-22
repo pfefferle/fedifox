@@ -1,13 +1,14 @@
 import { AP_ACCEPT, AP_CONTENT_TYPE, COLLECTION_PAGE_LIMIT, isApMediaType } from '../constants.js'
 import { FedifoxError } from '../errors.js'
 import { hostOf, originOf } from '../url.js'
+import { hasApi, intentTemplates } from '../intents.js'
 
 // The bearer token is only ever sent to the account's own server: its proxy,
 // its outbox, or any URL on the actor's origin (own collections). Everything
 // else — foreign objects, actors, page URLs — is fetched unauthenticated so a
 // crafted page can never make fedifox hand its token to a third party.
 export function bearerAllowed (account, url) {
-  if (!account) return false
+  if (!hasApi(account)) return false
   if (url === account.proxyUrl || url === account.outbox) return true
   const origin = originOf(url)
   return origin !== null && origin === originOf(account.actorId)
@@ -117,7 +118,9 @@ export function createClient ({ fetch = globalThis.fetch, getAccessToken = async
     return { found: items.includes(id), complete }
   }
 
-  async function webfinger (handle) {
+  // → { actorUrl, intents }: the actor behind a handle, and the pages its
+  // server offers for activities (FEP-3b86).
+  async function webfingerAccount (handle) {
     const clean = handle.trim().replace(/^acct:/i, '').replace(/^@/, '')
     const [user, domain] = clean.split('@')
     // A handle can come from a link in a web page: the domain must not smuggle
@@ -128,8 +131,10 @@ export function createClient ({ fetch = globalThis.fetch, getAccessToken = async
     const jrd = await readJson(res, 'webfinger', url)
     const link = (jrd.links || []).find((l) => l.rel === 'self' && isApMediaType(l.type))
     if (!/^https?:\/\//i.test(link?.href)) throw new FedifoxError(`${domain} has no ActivityPub actor for ${clean}`, { step: 'webfinger', detail: JSON.stringify(jrd.links || []) })
-    return link.href
+    return { actorUrl: link.href, intents: intentTemplates(jrd) }
   }
 
-  return { fetchObject, postActivity, walkCollection, containsId, webfinger }
+  const webfinger = async (handle) => (await webfingerAccount(handle)).actorUrl
+
+  return { fetchObject, postActivity, walkCollection, containsId, webfinger, webfingerAccount }
 }

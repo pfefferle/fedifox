@@ -3,6 +3,8 @@ import { headerCandidates } from './discovery/resolver.js'
 import { isApMediaType } from './constants.js'
 import { parseLink } from './link.js'
 import { hostOf } from './url.js'
+import { hasApi, intentLinks } from './intents.js'
+import { intendedButton } from './popup/render.js'
 
 export const ICON_FOUND = 'icons/symbol-color.svg'
 export const ICON_NONE = 'icons/symbol.svg'
@@ -37,6 +39,14 @@ export function createRouter ({ store, session, resolver, actions, client, brows
     const account = await store.getSelectedAccount()
     if (!account) throw new FedifoxError('Log in to a fediverse account first', { step: 'account' })
     if (account.needsReauth) throw new FedifoxError(`Session for ${account.handle} expired — log in again`, { step: 'account' })
+    return account
+  }
+
+  // Reading state and sending activities need the API; an account that only
+  // has intents is offered its server's links instead.
+  async function requireApiAccount () {
+    const account = await requireAccount()
+    if (!hasApi(account)) throw new FedifoxError(`${hostOf(account.actorId)} has no API for ${account.handle} — use the links to ${hostOf(account.actorId)}`, { step: 'account' })
     return account
   }
 
@@ -127,9 +137,19 @@ export function createRouter ({ store, session, resolver, actions, client, brows
     // attached for this one opening. Firefox before 149 only opens the popup
     // on a user gesture; there the tab goes to the popup as a page instead.
     async 'link:clicked' (msg, sender) {
-      await requireAccount()
-      parseLink(msg.link)
+      const account = await requireAccount()
+      const { action } = parseLink(msg.link)
       const tabId = sender.tab.id
+      // Nothing to choose and nothing to do here: with one account that only
+      // has intents, the link leads straight to that server's page, which asks.
+      if (action && !hasApi(account) && (await store.getAccounts()).length === 1) {
+        const links = intentLinks((await linkResource(msg.link)).resource, account.intents)
+        const href = links.find((l) => l.name === intendedButton(links, action))?.href
+        if (href) {
+          await browser.tabs.update(tabId, { url: href })
+          return { ok: true }
+        }
+      }
       const popup = `${browser.runtime.getURL('src/popup/popup.html')}?link=${encodeURIComponent(msg.link)}`
       try {
         await browser.action.setPopup({ tabId, popup })
@@ -148,12 +168,12 @@ export function createRouter ({ store, session, resolver, actions, client, brows
     async 'auth:login' (msg) { return { account: await session.login({ input: msg.input, manual: msg.manual }) } },
     async 'auth:logout' (msg) { await session.logout(msg.actorId); return { ok: true } },
     async 'action:state' (msg) {
-      const account = await requireAccount()
+      const account = await requireApiAccount()
       const resource = await resourceOf(msg)
       return { state: await actions.state(account, resource) }
     },
     async 'action:run' (msg) {
-      const account = await requireAccount()
+      const account = await requireApiAccount()
       const resource = await resourceOf(msg)
       const run = runners[msg.name]
       if (!run) throw new FedifoxError(`Unknown action ${msg.name}`, { step: 'action' })

@@ -58,6 +58,9 @@ details summary { color: var(--muted); font-size: 12px; cursor: pointer; margin-
 .buttons [data-name="mention"] { order: 1; }
 .buttons.confirm { grid-template-columns: 2fr 1fr; }
 .buttons.confirm button { grid-column: auto; order: 0; }
+/* Without the API there is no button to press: the links come first, Cancel last. */
+.buttons:empty { display: none; }
+.buttons.confirm:has(> :only-child) { order: 1; grid-template-columns: 1fr; }
 /* A reply that was asked for opens its form right away; the form has the buttons then. */
 .buttons.confirm:has(+ #compose:not([hidden])) { display: none; }
 [data-name="like"]::before, [data-name="undoLike"]::before { content: "★ "; }
@@ -65,9 +68,18 @@ details summary { color: var(--muted); font-size: 12px; cursor: pointer; margin-
 [data-name="reply"]::before { content: "↩ "; }
 [data-name="mention"]::before { content: "@ "; }
 
+/* What only opens on the account's server is a link, and looks like one. */
+.label { margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.stack { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.stack a { display: flex; gap: 4px; padding: 9px 12px; border-top: 1px solid var(--line); color: var(--accent-fg); text-decoration: none; }
+.stack a:first-child { border-top: 0; }
+.stack a:hover { background: var(--soft); }
+.stack a span { text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.stack a::after { content: "↗"; margin-left: auto; padding-left: 8px; color: var(--muted); }
+
 .row { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-top: 8px; }
 
-footer { padding: 8px 10px; border-radius: 6px; background: var(--soft); font-size: 12px; overflow-wrap: anywhere; }
+footer { padding: 8px 10px; border-radius: 6px; background: var(--accent-soft); color: var(--accent-fg); font-size: 12px; overflow-wrap: anywhere; }
 footer.error { background: var(--error-soft); color: var(--error-fg); }
 pre { white-space: pre-wrap; max-height: 120px; overflow: auto; font-size: 11px; margin: 4px 0 0; }
 [hidden] { display: none !important; }

@@ -294,3 +294,49 @@ test('a raw ActivityPub response is resolved by the background, other pages are 
   await router.pageLoaded(7, 'https://y.test/raw/7')
   assert.equal(calls.length, 2, 'a forgotten tab does not resolve again')
 })
+
+const connected = { actorId: 'https://m.test/users/a', handle: 'a@m.test', name: 'A', intents: { Like: 'https://m.test/intents/like?id={object}', Follow: 'https://m.test/authorize_interaction?uri={object}' }, needsReauth: false }
+
+test('every message that needs the API refuses an account that only has intents', async () => {
+  const { router, store, calls } = setup()
+  await store.saveAccount(connected)
+  await router.handle({ type: 'page:discovered', url: 'https://y.test/page', objectCandidates: ['https://y.test/posts/1'], actorCandidates: [] }, { tab: { id: 7 } })
+  for (const message of [{ type: 'action:state', tabId: 7 }, ...['like', 'undoLike', 'share', 'undoShare', 'follow', 'undoFollow', 'followAuthor', 'undoFollowAuthor', 'reply', 'mention'].map((name) => ({ type: 'action:run', tabId: 7, name, text: 'hi' }))]) {
+    const res = await router.handle(message)
+    assert.equal(res.error?.step, 'account', message.name || message.type)
+    assert.match(res.error.message, /use the links to m\.test/, message.name || message.type)
+  }
+  assert.deepEqual(calls.filter(([name]) => name !== 'resolve'), [])
+  // Links are still taken over: the account can act on them, on its server.
+  assert.deepEqual(await router.handle({ type: 'link:hooked' }), { hooked: true })
+})
+
+test('link:clicked goes straight to the server when the only account has only intents', async () => {
+  const { router, store, browser } = setup()
+  await store.saveAccount(connected)
+  assert.deepEqual(await router.handle({ type: 'link:clicked', link: 'web+like:https://y.test/posts/1' }, { tab: { id: 7, windowId: 1 } }), { ok: true })
+  assert.deepEqual(browser.sent, [[7, { url: 'https://m.test/intents/like?id=https%3A%2F%2Fy.test%2Fposts%2F1' }]])
+  assert.deepEqual(browser.popups, [])
+  await router.handle({ type: 'link:clicked', link: 'web+follow:https://y.test/posts/1' }, { tab: { id: 7, windowId: 1 } })
+  assert.deepEqual(browser.sent.at(-1), [7, { url: 'https://m.test/authorize_interaction?uri=https%3A%2F%2Fy.test%2Fusers%2Fbob' }])
+})
+
+test('link:clicked still opens the popup when there is something to choose or nothing to open', async () => {
+  const open = async (accounts, link) => {
+    const { router, store, browser } = setup()
+    for (const a of accounts) await store.saveAccount(a)
+    await store.setSelectedActorId(accounts[0].actorId)
+    assert.deepEqual(await router.handle({ type: 'link:clicked', link }, { tab: { id: 7, windowId: 1 } }), { ok: true })
+    return browser
+  }
+  for (const [accounts, link, why] of [
+    [[connected, account], 'web+like:https://y.test/posts/1', 'two accounts'],
+    [[account], 'web+like:https://y.test/posts/1', 'an account with the API'],
+    [[connected], 'web+ap://y.test/posts/1', 'a link without an action'],
+    [[connected], 'web+share:https://y.test/posts/1', 'an action the server has no intent for']
+  ]) {
+    const browser = await open(accounts, link)
+    assert.deepEqual(browser.sent, [], why)
+    assert.deepEqual(browser.popups.map(([name]) => name), ['setPopup', 'openPopup', 'setPopup'], why)
+  }
+})
