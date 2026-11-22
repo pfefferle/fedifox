@@ -29,6 +29,33 @@
     "default_title": "FediFox \u2014 this page is on the fediverse",
     "default_popup": "src/popup/popup.html"
   },
+  "protocol_handlers": [
+    {
+      "protocol": "web+ap",
+      "name": "FediFox",
+      "uriTemplate": "/src/popup/popup.html?link=%s"
+    },
+    {
+      "protocol": "web+activitypub",
+      "name": "FediFox",
+      "uriTemplate": "/src/popup/popup.html?link=%s"
+    },
+    {
+      "protocol": "web+follow",
+      "name": "FediFox",
+      "uriTemplate": "/src/popup/popup.html?link=%s"
+    },
+    {
+      "protocol": "web+like",
+      "name": "FediFox",
+      "uriTemplate": "/src/popup/popup.html?link=%s"
+    },
+    {
+      "protocol": "web+share",
+      "name": "FediFox",
+      "uriTemplate": "/src/popup/popup.html?link=%s"
+    }
+  ],
   "background": {
     "scripts": [
       "src/background.js"

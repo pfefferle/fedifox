@@ -60,7 +60,10 @@ export function createClient ({ fetch = globalThis.fetch, getAccessToken = async
   async function fetchObject (url, { account } = {}) {
     const step = 'fetch-object'
     let res
-    if (account?.proxyUrl) {
+    // The proxy is for objects on other servers and answers from the server's
+    // cache. The account's own documents (its collections) are read directly,
+    // so an action that was just undone does not still look done.
+    if (account?.proxyUrl && originOf(url) !== originOf(account.actorId)) {
       res = await authorizedRequest(account.proxyUrl, {
         method: 'POST',
         headers: { Accept: AP_ACCEPT, 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -115,14 +118,16 @@ export function createClient ({ fetch = globalThis.fetch, getAccessToken = async
   }
 
   async function webfinger (handle) {
-    const clean = handle.trim().replace(/^@/, '')
+    const clean = handle.trim().replace(/^acct:/i, '').replace(/^@/, '')
     const [user, domain] = clean.split('@')
-    if (!user || !domain) throw new FedifoxError(`"${handle}" is not a user@domain handle`, { step: 'webfinger' })
+    // A handle can come from a link in a web page: the domain must not smuggle
+    // a path into the request, and the answer must be a web address.
+    if (!user || !domain || /[/?#\\]/.test(domain)) throw new FedifoxError(`"${handle}" is not a user@domain handle`, { step: 'webfinger' })
     const url = `https://${domain}/.well-known/webfinger?resource=${encodeURIComponent(`acct:${clean}`)}`
     const res = await request(url, { headers: { Accept: 'application/jrd+json, application/json' } }, 'webfinger')
     const jrd = await readJson(res, 'webfinger', url)
     const link = (jrd.links || []).find((l) => l.rel === 'self' && isApMediaType(l.type))
-    if (!link?.href) throw new FedifoxError(`${domain} has no ActivityPub actor for ${clean}`, { step: 'webfinger', detail: JSON.stringify(jrd.links || []) })
+    if (!/^https?:\/\//i.test(link?.href)) throw new FedifoxError(`${domain} has no ActivityPub actor for ${clean}`, { step: 'webfinger', detail: JSON.stringify(jrd.links || []) })
     return link.href
   }
 

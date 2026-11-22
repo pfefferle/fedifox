@@ -43,13 +43,20 @@ the background is the only holder of state.
   send `page:discovered` again — used when the event page was restarted and
   neither memory nor the discovery cache has the tab's resource
 - `tab:resource` (popup → bg): returns the cached `Resource` for the active tab
+- `link:open` `{link}` (popup → bg): parse and resolve a fediverse link →
+  `{resource, action?}`, where `action ∈ follow|like|share|reply`
+- `link:hooked` (content → bg) → `{hooked}`: whether clicks on fediverse links
+  are taken over (an account is logged in and usable)
+- `link:clicked` `{link}` (content → bg): open the toolbar popup for the
+  clicked link
 - `auth:login` `{input, manual?: {clientId, clientSecret?}}` → `Account`
   (`input` is a handle or actor URL)
 - `auth:logout` `{actorId}`
 - `accounts:list`, `accounts:select` `{actorId}`
 - `action:run` `{tabId, name, text?}` → `{activityId, state}`, where
   `name ∈ like|undoLike|share|undoShare|follow|undoFollow|followAuthor|
-  undoFollowAuthor|reply|mention`
+  undoFollowAuthor|reply|mention`; with `link` the action runs on the link's
+  target instead of the tab's page (also for `action:state`)
 - `action:state` `{tabId}` → `{liked, shared, following, followingAuthor}`
 
 ### Data model (plain objects in `storage.local`)
@@ -136,7 +143,10 @@ Per top-level navigation, first result wins, in cost order:
 Fetching an explicit candidate (HTML/header link, rel=me) goes through the
 selected account's `proxyUrl` (`POST`, form-encoded `id=`) when present, else
 a direct fetch. **The page URL itself is never proxied**: the conneg fallback
-is always a direct, unauthenticated `GET`.
+is always a direct, unauthenticated `GET`. **URLs on the account's own origin
+are never proxied either**: the proxy answers from the server's cache of
+remote objects, and the account's own collections (`liked`, `following`) have
+to be read live, or an action that was just undone still looks done.
 
 **Bearer scope.** The access token is sent only to the account's `proxyUrl`,
 its `outbox`, and URLs on the actor's own origin (`new URL(actorId).origin`,
@@ -169,6 +179,58 @@ cache via `tabs.get(tabId).url`, and failing that asks the content script to
 rediscover (`page:rediscover`).
 
 
+## Fediverse links
+
+A click on a link that names a fediverse address does not leave the page: the
+toolbar popup opens over it, showing the link's target instead of the page's
+own object.
+
+- **Click take-over.** The content script cancels a click on a link with one
+  of the schemes below and sends it to the background (`link:clicked`). The
+  background sets the popup of that tab to `popup.html?link=…`, opens it
+  (`action.openPopup()`) and sets the popup back, so the next click on the
+  toolbar icon shows the page again. This only happens while an account is
+  usable (`link:hooked`), only for real clicks (`isTrusted`), and not when the
+  page handled the click itself.
+- **Registered protocols** (`protocol_handlers` in `manifest.json`): `web+ap`,
+  `web+activitypub`, `web+follow`, `web+like`, `web+share`. They cover what a
+  content script cannot see — the address bar, links from other applications,
+  navigation by script, and clicks while logged out. Firefox then navigates
+  the tab to `popup.html?link=…`, the popup as a page. A registration is
+  static and cannot depend on a login. `acct:` and `fedi:` cannot be
+  registered in Firefox and only work through the click take-over.
+- **Before Firefox 149** `action.openPopup()` needs a user gesture; when it is
+  refused the tab is sent to the popup as a page instead.
+
+A popup opened with a link resolves it with `link:open` and passes the link
+along with `action:state` and `action:run`. The link's resource is kept in the
+discovery cache under the link itself, so it never replaces the resource of a
+tab.
+
+`src/link.js` turns a link into `{url | handle, action?}`:
+
+| Link | Address | Action |
+|---|---|---|
+| `web+ap://host/path` ([fedi-to](https://github.com/fedi-to/fedi-to.github.io/blob/main/webap.md)) | `https://host/path` | — |
+| `web+activitypub:host/path?intent=…` (FEP-07d7, withdrawn) | `https://host/path` without `intent` | from `intent` |
+| `web+activitypub:Type?object=…` ([activitypub-schema](https://github.com/activitypub-schema/proposal/blob/main/PROPOSAL.md)) | `object`, or `inReplyTo` for `Create` | from `Type` |
+| `web+follow:` / `web+like:` / `web+share:` + address | the address, percent-encoded or not | the scheme |
+| `acct:user@host` | handle → WebFinger | — |
+| `fedi://user@host/` ([fedi-uri](https://github.com/timbray/fedi-uri)) | handle → WebFinger | — |
+
+An address is an `http(s)` URL (credentials are stripped) or an `acct:` URI.
+Only `follow`, `like`, `announce` (share) and `create` (reply) become an
+action; every other activity is dropped and the link only opens its target.
+
+A link is written by a third party, so nothing runs on its own. For a link
+that names an action the popup offers only that one button, and the user's
+click on it is the confirmation. The button is not focused. When the action is
+already done all buttons are shown instead (a link never undoes), and the
+popup does nothing when it is loaded inside a frame.
+
+`docs/test-links.md` lists every link form with its expected result.
+
+
 ## Actions
 
 Every action is an AS2 activity `POST`ed to the account's `outbox` with
@@ -184,7 +246,7 @@ stores an `ActionRecord` so `Undo` can reference it.
 | Share | `{type: Announce, object: objectId}` | author | `as:Public`, own followers |
 | Undo share | `{type: Undo, object: announceActivityId}` | same | same |
 | Follow | `{type: Follow, object: actorId}` | actor | — |
-| Undo follow | `{type: Undo, object: followActivityId}` | actor | — |
+| Undo follow | `{type: Undo, object: followActivityId}`, or `object: {type: Follow, actor, object: actorId}` when no id is on record | actor | — |
 | Reply | `{type: Create, object: {type: Note, inReplyTo: objectId, content, tag: [Mention]}}` | author | `as:Public` (+ parent's `to`/`cc` when readable) |
 | Mention | `{type: Create, object: {type: Note, content, tag: [Mention]}}` | actor | `as:Public` |
 | Copy link | clipboard ← `resource.id` | — | — |
@@ -205,6 +267,11 @@ simplification, not an oversight.
   record wins when the collection scan is inconclusive (page limit hit).
 - `shared` comes from `ActionRecord`s only; scanning the outbox for Announces
   is not attempted in v1.
+- Undo needs the id of the activity to undo, which only an `ActionRecord`
+  has. A follow is the exception: without a recorded id the `Undo` embeds the
+  `Follow` (its actor and target), which servers match on. A like or share
+  without a recorded id — made elsewhere, or the server returned no id — is
+  shown as a disabled "Liked" / "Shared" button instead of an undo.
 - State is fetched lazily when the popup opens, per resource, and cached in
   memory for the popup's lifetime.
 
@@ -243,9 +310,10 @@ Numbers refer to issues in the SWF repo.
 | `src/auth/session.js` | login/refresh/logout using `oauth4webapi` + `browser.identity` |
 | `src/discovery/html.js` | pure candidate extraction from `<link>`/`<a>` data |
 | `src/discovery/resolver.js` | Link-header parsing, candidate ordering, fetch + classify → `Resource` |
+| `src/link.js` | pure `parseLink()` — fediverse link → address + action |
 | `src/actions.js` | `createActions()` — state checks and user actions with ActionRecords |
 | `src/messages.js` | `createRouter()` — message router wiring background state to popup/content requests |
-| `src/content.js` | DOM → `page:discovered` message |
+| `src/content.js` | DOM → `page:discovered` message; click take-over for fediverse links |
 | `src/background.js` | wiring: message router, webRequest header capture, icon state, context menus |
 | `src/popup/popup.html`, `popup.js`, `popup.css`, `render.js` | UI |
 | `test/helpers/fetch-stub.js`, `test/helpers/storage-stub.js` | test doubles |
