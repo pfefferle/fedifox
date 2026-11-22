@@ -340,3 +340,35 @@ test('link:clicked still opens the popup when there is something to choose or no
     assert.deepEqual(browser.popups.map(([name]) => name), ['setPopup', 'openPopup', 'setPopup'], why)
   }
 })
+
+test('link:clicked while the popup of an earlier link is still open opens the new link', async () => {
+  const { router, store, browser } = setup()
+  await store.saveAccount(account)
+  // Firefox reads the popup address when it opens the popup, and an earlier
+  // popup closes when the page is clicked: here, while the new address is set.
+  let current = null
+  let closeEarlier = null
+  const opened = []
+  browser.action.setPopup = async ({ popup }) => {
+    current = popup
+    if (popup && closeEarlier) {
+      closeEarlier()
+      closeEarlier = null
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+  }
+  browser.action.openPopup = () => {
+    opened.push(current)
+    return new Promise((resolve) => { closeEarlier = resolve })
+  }
+  const first = router.handle({ type: 'link:clicked', link: 'acct:bob@y.test' }, { tab: { id: 7, windowId: 1 } })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const second = router.handle({ type: 'link:clicked', link: 'web+ap://y.test/posts/1' }, { tab: { id: 7, windowId: 1 } })
+  await first
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(opened, ['moz-extension://fedifox/src/popup/popup.html?link=acct%3Abob%40y.test', 'moz-extension://fedifox/src/popup/popup.html?link=web%2Bap%3A%2F%2Fy.test%2Fposts%2F1'])
+  // The next click on the toolbar icon is for the page again.
+  closeEarlier()
+  await second
+  assert.equal(current, null)
+})

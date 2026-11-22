@@ -18,6 +18,8 @@ export function createRouter ({ store, session, resolver, actions, client, brows
   const tabHeaderLinks = new Map()
   const tabIsApDocument = new Map()
   const tabGeneration = new Map()
+  // The link click a tab's popup is currently set for.
+  const tabLinkClick = new Map()
 
   const generation = (tabId) => tabGeneration.get(tabId) || 0
   const bumpGeneration = (tabId) => tabGeneration.set(tabId, generation(tabId) + 1)
@@ -151,6 +153,11 @@ export function createRouter ({ store, session, resolver, actions, client, brows
         }
       }
       const popup = `${browser.runtime.getURL('src/popup/popup.html')}?link=${encodeURIComponent(msg.link)}`
+      // A click while the popup of an earlier link is open closes that popup
+      // and lets its click finish. Only the latest click sets the popup back,
+      // or the earlier one would take the address away before it is opened.
+      const click = {}
+      tabLinkClick.set(tabId, click)
       try {
         await browser.action.setPopup({ tabId, popup })
         await browser.action.openPopup({ windowId: sender.tab.windowId })
@@ -158,7 +165,10 @@ export function createRouter ({ store, session, resolver, actions, client, brows
         console.debug('fedifox: could not open the popup', e?.message)
         await browser.tabs.update(tabId, { url: popup })
       } finally {
-        await browser.action.setPopup({ tabId, popup: null })
+        if (tabLinkClick.get(tabId) === click) {
+          tabLinkClick.delete(tabId)
+          await browser.action.setPopup({ tabId, popup: null })
+        }
       }
       return { ok: true }
     },
