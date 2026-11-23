@@ -32,10 +32,18 @@ Serve `docs/test-links.md` as a page with clickable links (GitHub removes the `h
 - [ ] Click an `intent=create` link → compose box is open; Send creates the reply to the link's target.
 - [ ] Click an `intent=block` link → the card opens, all buttons show.
 - [ ] Click an `acct:` and a `fedi://user@host/` link → popup with the actor card.
-- [ ] Logged out (reload the page first): click an `acct:` link → FediFox does not react; click a `web+…` link → Firefox opens the popup as a page with the card and the login form.
+- [ ] Logged out (reload the page first): click an `acct:` link → FediFox does not react; click a `web+…` link → Firefox opens the popup as a page with only the connect form; after connecting, the card shows.
 - [ ] Log in while a page with links is open → the links are taken over without a reload.
 - [ ] Paste a `web+follow:…` link into the address bar → the popup opens as a page and asks "Follow …?", with only **Follow** and **Cancel**; Cancel goes back without following.
 - [ ] On a Firefox before 149: a clicked link opens the popup as a page instead of over the page.
+
+## Intents (FEP-3b86)
+- [ ] Connect an account whose server has no API but lists intents in WebFinger → no authorization window, the popup says "Connected … : actions open on …".
+- [ ] With that account on a post → no buttons, a list of links "On <host>"; a click opens the server's page in a new tab with the post filled in.
+- [ ] With that as the only account: click a `web+follow:` link → the tab goes straight to the server's follow page. Add a second account → the popup opens instead, with the one link and Cancel below it.
+- [ ] Log in to a server with the API and intents → buttons, and the list of links below them.
+- [ ] A server with neither → the login error as before.
+- [ ] Connect a mastodon.social account → connected without a login; on a post "Follow @author" and "Open", on a profile also "Mention".
 
 ## Actions (each: check the WP admin / the target's collections)
 - [ ] Like → appears in `…/liked`; button turns to Unlike; Unlike → removed.

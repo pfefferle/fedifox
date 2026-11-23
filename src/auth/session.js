@@ -51,13 +51,9 @@ export function createSession ({ store, client, browser, fetch = globalThis.fetc
     return discoverEndpoints(actor, { fetch })
   }
 
-  async function login ({ input, manual } = {}) {
-    const trimmed = (input || '').trim()
-    if (!trimmed) throw new FedifoxError('Enter a handle like user@example.org or an actor URL', { step: 'login' })
-    const actorUrl = /^https?:\/\//.test(trimmed) ? trimmed : await client.webfinger(trimmed)
-    const actor = await client.fetchObject(actorUrl)
+  // The login to the ActivityPub API: discovery → client → PKCE → token.
+  async function apiLogin (actor, actorUrl, manual) {
     if (!actor.outbox) throw new FedifoxError(`${hostOf(actorUrl)} actor has no outbox — the server does not support the ActivityPub API`, { step: 'login', detail: actorUrl })
-
     const as = await discoverEndpoints(actor, { fetch })
     const redirectUri = browser.identity.getRedirectURL()
     const creds = await resolveClientCreds({ as, store, redirectUri, manual, fetch })
@@ -90,7 +86,37 @@ export function createSession ({ store, client, browser, fetch = globalThis.fetc
       throw new FedifoxError(`${hostOf(as.token_endpoint)} refused the token exchange`, { step: 'token', status: response?.status, detail: cause?.message, cause })
     }
 
-    const account = accountFromActor(actor, tokens, { asOrigin: as.issuer, now: now() })
+    return accountFromActor(actor, tokens, { asOrigin: as.issuer, now: now() })
+  }
+
+  async function login ({ input, manual } = {}) {
+    const trimmed = (input || '').trim()
+    if (!trimmed) throw new FedifoxError('Enter a handle like user@example.org or an actor URL', { step: 'login' })
+    const byUrl = /^https?:\/\//.test(trimmed)
+    const found = byUrl ? { actorUrl: trimmed } : await client.webfingerAccount(trimmed)
+    const actorUrl = found.actorUrl
+    // What WebFinger said is enough to connect with when it listed intents:
+    // some servers only show the actor itself to signed requests.
+    const handleGiven = trimmed.replace(/^acct:/i, '').replace(/^@/, '')
+    let who = byUrl ? null : { actorId: actorUrl, handle: handleGiven, name: handleGiven }
+    let intents = found.intents || {}
+
+    let account
+    try {
+      const actor = await client.fetchObject(actorUrl)
+      const { actorId, handle, name } = accountFromActor(actor, {}, {})
+      who = { actorId, handle, name }
+      // An actor URL says nothing about intents; WebFinger does, when it answers.
+      if (byUrl) intents = await client.webfingerAccount(handle).then((res) => res.intents, () => ({}))
+      account = { ...await apiLogin(actor, actorUrl, manual), intents }
+    } catch (e) {
+      // The server has no API, or not one fedifox gets a login for, but it
+      // lists its own pages for actions: the account is connected as it is,
+      // and actions open there. A login the user broke off stays broken off.
+      if (e?.step === 'authorize' || !who || !Object.keys(intents).length) throw e
+      console.debug('fedifox: no API login, connecting with intents', e?.message)
+      account = { ...who, intents, needsReauth: false }
+    }
     await store.saveAccount(account)
     await store.setSelectedActorId(account.actorId)
     return account

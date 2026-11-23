@@ -1,9 +1,12 @@
 import { resourceView, buttonsFor, accountLabel, intendedButton, offeredButtons, confirmTitle, doneMessage } from './render.js'
+import { hasApi, intentLinks } from '../intents.js'
+import { hostOf } from '../url.js'
 
 const $ = (id) => document.getElementById(id)
 const send = (msg) => browser.runtime.sendMessage(msg)
 
 let tabId
+let account = null
 let resource = null
 let composeAction = null
 // Set when the popup was opened for a fediverse link: it then shows and acts
@@ -29,6 +32,7 @@ function fail (error) {
 
 async function loadAccounts () {
   const { accounts, selectedActorId } = await send({ type: 'accounts:list' })
+  account = accounts.find((a) => a.actorId === selectedActorId) || accounts[0] || null
   const select = $('account')
   select.innerHTML = ''
   for (const account of accounts) {
@@ -48,13 +52,16 @@ async function loadAccounts () {
   return accounts
 }
 
-function renderButtons (state) {
+// Buttons act here and need the API, so there are none without a state.
+// Links open the page the account's server has for an action (FEP-3b86).
+function render (state) {
   const wrap = $('buttons')
   wrap.innerHTML = ''
-  const all = buttonsFor(resource, state)
+  const all = state ? buttonsFor(resource, state) : []
+  const links = intentLinks(resource, account?.intents)
   // Opened for one action: the headline asks, and the only other button
   // leaves without doing anything.
-  const asked = intendedButton(all, intended)
+  const asked = intendedButton(state ? all : links, intended)
   $('title').textContent = asked ? confirmTitle(resource, asked) : resourceView(resource).title
   wrap.classList.toggle('confirm', Boolean(asked))
   // Never focused: a key pressed while the popup opens must not run an action.
@@ -79,9 +86,41 @@ function renderButtons (state) {
     cancel.addEventListener('click', () => { if (window.history.length > 1) window.history.back(); else window.close() })
     wrap.append(cancel)
   }
+  const offered = asked ? links.filter((l) => l.name === asked) : links
+  $('links').hidden = offered.length === 0
+  $('links-label').textContent = offered.length ? `On ${hostOf(offered[0].href)}` : ''
+  $('links-list').innerHTML = ''
+  for (const l of offered) {
+    const a = document.createElement('a')
+    a.href = l.href
+    a.target = '_blank'
+    a.rel = 'noopener'
+    a.dataset.name = l.name
+    // The toolbar popup stays open over a new tab, so it opens the page itself
+    // and closes. As a page, the popup makes way for the server's page.
+    a.addEventListener('click', async (e) => {
+      e.preventDefault()
+      if (await browser.tabs.getCurrent()) { window.location.assign(l.href); return }
+      await browser.tabs.create({ url: l.href })
+      window.close()
+    })
+    const label = document.createElement('span')
+    label.textContent = l.label
+    a.append(label)
+    $('links-list').append(a)
+  }
+  return offered.length
 }
 
 async function loadResource () {
+  // Nothing can be done with a page before an account is connected: the
+  // popup is only the form then.
+  if (!account) {
+    $('resource').hidden = true
+    $('empty').hidden = true
+    setStatus('')
+    return
+  }
   const res = await send(link ? { type: 'link:open', link } : { type: 'tab:resource', tabId })
   resource = res.resource || null
   intended = res.action
@@ -94,9 +133,13 @@ async function loadResource () {
   if (view.link) $('title').href = view.link
   else $('title').removeAttribute('href')
   $('subtitle').textContent = view.subtitle
+  if (account && !hasApi(account)) {
+    if (!render(null)) setStatus(`${hostOf(account.actorId)} has no page for this`)
+    return
+  }
   const st = await send({ type: 'action:state', tabId, link })
   if (st.error) {
-    $('buttons').innerHTML = ''
+    render(null)
     if (st.error.step === 'account') {
       setStatus(st.error.message)
       if (st.error.message.includes('expired')) $('login').hidden = false
@@ -105,7 +148,7 @@ async function loadResource () {
     }
     return
   }
-  renderButtons(st.state)
+  render(st.state)
   if (intendedButton(buttonsFor(resource, st.state), intended) === 'reply') openCompose('reply')
 }
 
@@ -114,7 +157,7 @@ async function runAction (name, text) {
   setStatus('Working…')
   const res = await send({ type: 'action:run', tabId, link, name, text })
   if (res.error) return fail(res.error)
-  renderButtons(res.state)
+  render(res.state)
   setStatus(doneMessage(name), null, res.activityId)
 }
 
@@ -140,7 +183,7 @@ $('login-form').addEventListener('submit', async (e) => {
   const manual = $('client-id').value ? { clientId: $('client-id').value, clientSecret: $('client-secret').value || undefined } : undefined
   const res = await send({ type: 'auth:login', input: $('login-input').value, manual })
   if (res.error) return fail(res.error)
-  setStatus(`Logged in as ${res.account.handle}`)
+  setStatus(hasApi(res.account) ? `Logged in as ${res.account.handle}` : `Connected ${res.account.handle}: actions open on ${hostOf(res.account.actorId)}`)
   await loadAccounts()
   await loadResource()
 })
@@ -152,6 +195,7 @@ $('account').addEventListener('change', async (e) => {
   }
   const res = await send({ type: 'accounts:select', actorId: e.target.value })
   if (res.error) return fail(res.error)
+  await loadAccounts()
   await loadResource()
 })
 

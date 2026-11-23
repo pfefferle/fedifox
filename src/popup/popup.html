@@ -22,7 +22,7 @@
         <label>Client ID <input id="client-id"></label>
         <label>Client secret <input id="client-secret" type="password"></label>
       </details>
-      <button type="submit">Log in</button>
+      <button type="submit">Connect</button>
     </form>
   </section>
 
@@ -39,6 +39,10 @@
         <button type="button" id="compose-cancel">Cancel</button>
       </div>
     </form>
+    <div id="links" hidden>
+      <div id="links-label" class="label"></div>
+      <div id="links-list" class="stack"></div>
+    </div>
   </section>
 
   <section id="empty" hidden><p class="muted">No ActivityPub object found on this page.</p></section>
