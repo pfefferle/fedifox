@@ -13,18 +13,19 @@ export async function fetchServerMetadata (origin, { fetch = globalThis.fetch } 
   } catch { return null }
 }
 
-// ActivityPub §4.1 actor endpoints come first; RFC 8414 fills in optional
-// fields (registration, revocation) or serves as the fallback.
+// Only merge metadata when it describes the same authorization server as the actor.
 export async function discoverEndpoints (actor, { fetch = globalThis.fetch } = {}) {
   const ep = actor.endpoints || {}
   if (ep.oauthAuthorizationEndpoint && ep.oauthTokenEndpoint) {
     const origin = originOf(ep.oauthTokenEndpoint)
-    const extra = (await fetchServerMetadata(origin, { fetch })) || {}
+    const metadata = await fetchServerMetadata(origin, { fetch })
+    const extra = metadata?.authorization_endpoint === ep.oauthAuthorizationEndpoint && metadata?.token_endpoint === ep.oauthTokenEndpoint ? metadata : {}
     return {
       ...extra,
       issuer: extra.issuer || origin,
       authorization_endpoint: ep.oauthAuthorizationEndpoint,
-      token_endpoint: ep.oauthTokenEndpoint
+      token_endpoint: ep.oauthTokenEndpoint,
+      ...(ep.oauthRegistrationEndpoint ? { registration_endpoint: ep.oauthRegistrationEndpoint } : {})
     }
   }
   const origin = originOf(actor.id)
