@@ -8,12 +8,30 @@ const json = (body, status = 200) => ({ status, body, headers: { 'content-type':
 
 test('actor endpoints win and are merged with RFC 8414 metadata', async () => {
   const { fetch } = createFetchStub({ 'GET https://x.test/.well-known/oauth-authorization-server': json(meta) })
-  const actor = { id: 'https://x.test/a', endpoints: { oauthAuthorizationEndpoint: 'https://x.test/wp-json/activitypub/1.0/oauth/authorize', oauthTokenEndpoint: 'https://x.test/wp-json/activitypub/1.0/oauth/token' } }
+  const actor = { id: 'https://x.test/a', endpoints: { oauthAuthorizationEndpoint: meta.authorization_endpoint, oauthTokenEndpoint: meta.token_endpoint } }
   const as = await discoverEndpoints(actor, { fetch })
-  assert.equal(as.authorization_endpoint, 'https://x.test/wp-json/activitypub/1.0/oauth/authorize')
-  assert.equal(as.token_endpoint, 'https://x.test/wp-json/activitypub/1.0/oauth/token')
+  assert.equal(as.authorization_endpoint, meta.authorization_endpoint)
+  assert.equal(as.token_endpoint, meta.token_endpoint)
   assert.equal(as.registration_endpoint, 'https://x.test/oauth/clients')
   assert.equal(as.issuer, 'https://x.test')
+})
+
+test('actor registration endpoint is used when another server owns well-known metadata', async () => {
+  const { fetch } = createFetchStub({ 'GET https://x.test/.well-known/oauth-authorization-server': json(meta) })
+  const actor = { id: 'https://x.test/a', endpoints: { oauthAuthorizationEndpoint: 'https://x.test/wp-json/activitypub/1.0/oauth/authorize', oauthTokenEndpoint: 'https://x.test/wp-json/activitypub/1.0/oauth/token', oauthRegistrationEndpoint: 'https://x.test/wp-json/activitypub/1.0/oauth/clients' } }
+  assert.deepEqual(await discoverEndpoints(actor, { fetch }), {
+    issuer: 'https://x.test',
+    authorization_endpoint: actor.endpoints.oauthAuthorizationEndpoint,
+    token_endpoint: actor.endpoints.oauthTokenEndpoint,
+    registration_endpoint: actor.endpoints.oauthRegistrationEndpoint
+  })
+})
+
+test('actor registration endpoint works when well-known metadata is unavailable', async () => {
+  const { fetch } = createFetchStub({ 'GET https://x.test/.well-known/oauth-authorization-server': { status: 404, body: '' } })
+  const actor = { id: 'https://x.test/a', endpoints: { oauthAuthorizationEndpoint: 'https://x.test/auth', oauthTokenEndpoint: 'https://x.test/token', oauthRegistrationEndpoint: 'https://x.test/clients' } }
+  const as = await discoverEndpoints(actor, { fetch })
+  assert.equal(as.registration_endpoint, actor.endpoints.oauthRegistrationEndpoint)
 })
 
 test('actor endpoints without metadata still work', async () => {
